@@ -436,11 +436,17 @@ export default function LoginForm() {
               <option value="" disabled>
                 Select user type
               </option>
-              {USER_TYPE_OPTIONS.map((opt) => (
+              {/* {USER_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
-              ))}
+              ))} */}
+              <option
+                key={USER_TYPE_OPTIONS[0].value}
+                value={USER_TYPE_OPTIONS[0].value}
+              >
+                {USER_TYPE_OPTIONS[0].label}
+              </option>
             </select>
             <SelectChevron />
           </div>

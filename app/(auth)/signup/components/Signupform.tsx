@@ -435,7 +435,7 @@ export default function SignupForm() {
                 <option value="" disabled className="bg-white text-gray-400">
                   Select…
                 </option>
-                {JOINED_AS_OPTIONS.map((opt) => (
+                {/* {JOINED_AS_OPTIONS.map((opt) => (
                   <option
                     key={opt.value}
                     value={opt.value}
@@ -443,7 +443,14 @@ export default function SignupForm() {
                   >
                     {opt.label}
                   </option>
-                ))}
+                ))} */}
+                <option
+                  key={JOINED_AS_OPTIONS[2].value}
+                  value={JOINED_AS_OPTIONS[2].value}
+                  className="bg-white text-gray-900"
+                >
+                  {JOINED_AS_OPTIONS[2].label}
+                </option>
               </select>
               <svg
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"

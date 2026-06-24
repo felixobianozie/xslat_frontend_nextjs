@@ -30,7 +30,7 @@ const OTP_REGEX = /^\d{6}$/;
 
 // How long the "Resend code" button stays disabled after each send (in seconds).
 // Adjust here to change the cooldown across the whole form.
-const RESEND_COOLDOWN_SECONDS = 60;
+const RESEND_COOLDOWN_SECONDS = 300;
 
 // Length of the pause before redirecting to /login after a successful reset.
 // Gives the user time to read the toast and inline notice first.

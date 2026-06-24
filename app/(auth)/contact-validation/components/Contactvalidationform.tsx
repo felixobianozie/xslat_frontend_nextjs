@@ -37,7 +37,7 @@ const OTP_REGEX = /^\d{6}$/;
 
 // How long the "Resend code" button stays disabled after each send (in seconds).
 // Adjust here to change the cooldown across the whole form.
-const RESEND_COOLDOWN_SECONDS = 60;
+const RESEND_COOLDOWN_SECONDS = 300;
 
 // Abort timeout — falls back to 15s if the env variable is missing (matches Signupform)
 const TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS) || 15000;
