@@ -304,7 +304,7 @@ function ConfirmModal({
           <button
             onClick={onCancel}
             disabled={loading}
-            className="flex-1 px-5 py-3 rounded-full border border-slate-300 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+            className="flex-1 px-5 py-3 rounded-full border border-slate-300 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
           >
             Go Back
           </button>
@@ -554,7 +554,7 @@ function Step1({
       <div className="flex justify-center">
         <button
           onClick={() => setShowModal(true)}
-          className="px-10 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200"
+          className="px-10 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200 cursor-pointer"
         >
           ✅ I MADE PAYMENT: Proceed to Step 2
         </button>
@@ -567,7 +567,7 @@ function Step1({
           <div className="text-center">
             <button
               onClick={() => setShowRecovery(true)}
-              className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-indigo-600 transition-colors underline underline-offset-2"
+              className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-indigo-600 transition-colors underline underline-offset-2 cursor-pointer"
             >
               <svg
                 width="14"
@@ -616,7 +616,7 @@ function Step1({
                   setRecoveryId("");
                   setRecoveryError("");
                 }}
-                className="text-amber-400 hover:text-amber-700 transition-colors shrink-0 mt-0.5"
+                className="text-amber-400 hover:text-amber-700 transition-colors shrink-0 mt-0.5 cursor-pointer"
                 aria-label="Close"
               >
                 <svg
@@ -687,7 +687,7 @@ function Step1({
                   // All good — jump to Step 3
                   onSkipToForm(recoveryId);
                 }}
-                className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-sm hover:shadow-md transition-all duration-200 whitespace-nowrap"
+                className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-sm hover:shadow-md transition-all duration-200 whitespace-nowrap cursor-pointer"
               >
                 Go to Admission Form →
               </button>
@@ -1061,7 +1061,7 @@ function Step2({
       <div className="flex justify-center mt-8">
         <button
           onClick={handleSubmit}
-          className="px-10 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200"
+          className="px-10 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200 cursor-pointer"
         >
           🔍 VERIFY MY PAYMENT: Proceed to Step 3
         </button>
@@ -1859,7 +1859,7 @@ function Step3({
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="px-12 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200 disabled:opacity-60 disabled:scale-100 flex items-center gap-3"
+            className="px-12 py-4 rounded-full bg-linear-to-r from-indigo-600 to-violet-600 text-white font-bold text-base shadow-lg shadow-indigo-900/30 hover:scale-105 hover:shadow-indigo-700/50 transition-all duration-200 disabled:opacity-60 disabled:scale-100 flex items-center gap-3 cursor-pointer"
           >
             {loading && (
               <svg

@@ -231,7 +231,7 @@ function Lightbox({
           <button
             onClick={handleDownload}
             title="Download photo"
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
           >
             <svg
               width="16"
@@ -250,7 +250,7 @@ function Lightbox({
           <button
             onClick={onClose}
             title="Close"
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
           >
             <svg
               width="18"
@@ -286,7 +286,7 @@ function Lightbox({
         {photos.length > 1 && (
           <button
             onClick={prev}
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-colors"
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-colors cursor-pointer"
           >
             <svg
               width="20"
@@ -305,7 +305,7 @@ function Lightbox({
         {photos.length > 1 && (
           <button
             onClick={next}
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-colors cursor-pointer"
           >
             <svg
               width="20"
@@ -336,7 +336,7 @@ function Lightbox({
               <button
                 key={i}
                 onClick={() => setCurrent(i)}
-                className={`transition-all rounded-full ${
+                className={`transition-all rounded-full cursor-pointer ${
                   i === current
                     ? "w-6 h-2 bg-amber-400"
                     : "w-2 h-2 bg-white/30 hover:bg-white/60"
@@ -468,7 +468,7 @@ function CollectionCard({
                   onClick={() =>
                     onOpenPhoto(collection.photos, i + 1, collection.title)
                   }
-                  className="relative w-8 h-8 rounded-md overflow-hidden border border-white ring-1 ring-slate-200 hover:ring-indigo-400 transition-all"
+                  className="relative w-8 h-8 rounded-md overflow-hidden border border-white ring-1 ring-slate-200 hover:ring-indigo-400 transition-all cursor-pointer"
                 >
                   <Image
                     src={p.src}
@@ -483,7 +483,7 @@ function CollectionCard({
                   onClick={() =>
                     onOpenPhoto(collection.photos, 0, collection.title)
                   }
-                  className="w-8 h-8 rounded-md bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 text-[10px] font-bold"
+                  className="w-8 h-8 rounded-md bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 text-[10px] font-bold cursor-pointer"
                 >
                   +{collection.photos.length - 4}
                 </button>

@@ -4,7 +4,7 @@ module.exports = {
   generateRobotsTxt: true, // generates robots.txt too
   generateIndexSitemap: false, // set true for large sites (1000s of pages)
   // sitemapSize: 7000,          // split into multiple files if needed
-  exclude: ["/dashboard", "/test-page"], // pages to exclude
+  exclude: ["/dashboard", "/test-page", "/coming-soon"], // pages to exclude
   changefreq: "daily",
   priority: 0.7,
 

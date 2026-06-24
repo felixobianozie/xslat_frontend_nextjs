@@ -210,7 +210,7 @@ function VideoViewer({
             <button
               onClick={onClose}
               title="Close"
-              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
             >
               <svg
                 width="18"

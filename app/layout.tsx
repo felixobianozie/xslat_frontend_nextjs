@@ -1,5 +1,8 @@
 import "./globals.css";
 import { Metadata } from "next";
+import { ToastContainer } from "react-toastify";
+import TanstackProvider from "@/app/context/Tanstackprovider";
+import CustomSessionProvider from "./context/Customsessionprovider";
 
 export const metadata: Metadata = {
   title: "LHS",
@@ -14,7 +17,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col text-black">
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          newestOnTop
+          closeOnClick
+          pauseOnHover
+          theme="light"
+        />
+        <CustomSessionProvider>
+          <TanstackProvider>{children}</TanstackProvider>
+        </CustomSessionProvider>
+      </body>
     </html>
   );
 }

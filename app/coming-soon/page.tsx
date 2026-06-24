@@ -167,7 +167,7 @@ export default function ComingSoonPage() {
                 onClick={() => {
                   if (email) setSubState("done");
                 }}
-                className="px-6 py-3 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 font-bold text-sm whitespace-nowrap hover:scale-105 transition-transform shadow-lg"
+                className="px-6 py-3 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 font-bold text-sm whitespace-nowrap hover:scale-105 transition-transform shadow-lg cursor-pointer"
               >
                 Notify Me
               </button>

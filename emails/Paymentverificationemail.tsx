@@ -210,7 +210,7 @@ export const PaymentVerificationEmail = ({
               <Heading style={emailTitle}>
                 {isSchoolCopy
                   ? "New Payment Verification Received"
-                  : "Payment Received — Your Form ID"}
+                  : "Payment Received | Your Form ID"}
               </Heading>
             </Section>
 
@@ -219,7 +219,7 @@ export const PaymentVerificationEmail = ({
               {/* School-copy badge */}
               {isSchoolCopy && (
                 <div style={schoolCopyBadge}>
-                  📌 School Copy — Admin Reference
+                  📌 School Copy: Admin Reference
                 </div>
               )}
 
@@ -263,8 +263,8 @@ export const PaymentVerificationEmail = ({
                   <Text style={noticeParagraph}>
                     <strong>What happens next?</strong> Our team will validate
                     your ₦3,000 payment and contact you within{" "}
-                    <strong>1-48 working hours</strong> with your entrance
-                    examination schedule. Please keep your Form ID safe — you
+                    <strong>1 to 48 working hours</strong> with your entrance
+                    examination schedule. Please keep your Form ID safe: you
                     will need it to fill and track your admission form.
                   </Text>
                 </div>
@@ -338,9 +338,9 @@ export const PaymentVerificationEmail = ({
                     <Text style={{ ...noticeParagraph, color: "#78350f" }}>
                       <strong>Admin Action Required:</strong> Please verify the
                       ₦3,000 payment in your bank statement and contact the
-                      applicant within <strong>1-48 working hours</strong> with
-                      an entrance examination date. The proof of payment image
-                      is attached to this email.
+                      applicant within <strong>1 to 48 working hours</strong>{" "}
+                      with an entrance examination date. The proof of payment
+                      image is attached to this email.
                     </Text>
                   </div>
                 </>

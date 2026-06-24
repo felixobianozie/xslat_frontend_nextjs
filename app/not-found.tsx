@@ -89,7 +89,7 @@ export default function NotFoundPage() {
                 </Link>
                 <button
                   onClick={() => window.history.back()}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-white/20 text-white font-semibold text-sm hover:bg-white/10 transition-colors"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-white/20 text-white font-semibold text-sm hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <svg
                     width="15"

@@ -138,7 +138,7 @@ export default function HeroSection() {
                 <div className="flex items-center gap-4 mb-7">
                   <button
                     onClick={goToPrev}
-                    className="w-9 h-9 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 hover:border-white/50 transition-all shrink-0"
+                    className="w-9 h-9 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 hover:border-white/50 transition-all shrink-0 cursor-pointer"
                     aria-label="Previous slide"
                   >
                     <svg
@@ -159,7 +159,7 @@ export default function HeroSection() {
                       <button
                         key={i}
                         onClick={() => setCurrent(i)}
-                        className={`transition-all duration-300 rounded-full ${
+                        className={`transition-all duration-300 rounded-full cursor-pointer ${
                           i === current
                             ? "w-8 h-2 bg-amber-400"
                             : "w-2 h-2 bg-white/40 hover:bg-white/70"
@@ -171,7 +171,7 @@ export default function HeroSection() {
 
                   <button
                     onClick={goToNext}
-                    className="w-9 h-9 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 hover:border-white/50 transition-all shrink-0"
+                    className="w-9 h-9 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 hover:border-white/50 transition-all shrink-0 cursor-pointer"
                     aria-label="Next slide"
                   >
                     <svg

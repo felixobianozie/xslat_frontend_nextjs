@@ -115,7 +115,7 @@ function Lightbox({
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 border border-white/20 flex items-center justify-center text-white hover:bg-black/70 transition-colors"
+          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 border border-white/20 flex items-center justify-center text-white hover:bg-black/70 transition-colors cursor-pointer"
           aria-label="Close image"
         >
           <svg
@@ -292,7 +292,7 @@ export default function FacilitiesPage() {
                   {/* Click to view hint */}
                   <button
                     onClick={() => setLightboxFacility(facility)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-violet-600 transition-colors w-fit"
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-violet-600 transition-colors w-fit cursor-pointer"
                   >
                     <svg
                       width="16"

@@ -215,8 +215,8 @@ export const AdmissionFormEmail = ({
 }: AdmissionFormEmailProps) => {
   const fullName = [surname, firstname, otherNames].filter(Boolean).join(" ");
   const previewText = isSchoolCopy
-    ? `New admission form submitted — ${fullName} (Form ID: ${formId})`
-    : `Your LHS admission form has been received — ${fullName}`;
+    ? `New admission form submitted | ${fullName} (Form ID: ${formId})`
+    : `Your LHS admission form has been received | ${fullName}`;
 
   return (
     <Html>
@@ -251,7 +251,7 @@ export const AdmissionFormEmail = ({
                     ✅ <strong>Dear {firstname},</strong> your admission form
                     has been successfully received. Our team will review your
                     application and contact you within{" "}
-                    <strong>1-48 working hours</strong> to schedule your
+                    <strong>1 to 48 working hours</strong> to schedule your
                     entrance examination.
                   </Text>
                 </div>

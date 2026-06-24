@@ -125,7 +125,7 @@ export default function FacilitiesSection() {
                 </p>
 
                 {/* CTA */}
-                <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 group-hover:text-violet-600 transition-colors uppercase tracking-wider">
+                <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 group-hover:text-violet-600 transition-colors uppercase tracking-wider cursor-pointer">
                   See All
                   <svg
                     width="14"

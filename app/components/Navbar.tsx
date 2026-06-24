@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSession, signOut } from "next-auth/react";
 
 const mainLinks = [
   { label: "About", href: "/about" },
@@ -20,11 +21,20 @@ const moreLinks = [
 ];
 
 export default function Navbar() {
+  // Session is read once and drives both the desktop and mobile auth areas.
+  // Status values: "loading" | "authenticated" | "unauthenticated".
+  const { status } = useSession();
+  const isAuthenticated = status === "authenticated";
+  const isAuthLoading = status === "loading";
+
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false); // Avatar dropdown
   const [bannerVisible, setBannerVisible] = useState(true);
+
   const moreRef = useRef<HTMLDivElement>(null);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 300); // Originally 20
@@ -32,6 +42,7 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Close the "More" dropdown when the user clicks outside it.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
@@ -41,6 +52,53 @@ export default function Navbar() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Close the account dropdown when the user clicks outside it. Kept as a
+  // separate effect from the "More" handler so each dropdown is independent.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        accountRef.current &&
+        !accountRef.current.contains(e.target as Node)
+      ) {
+        setAccountOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Logout closes any open menus first so the UI returns to a clean state,
+  // then hands off to NextAuth which clears the session cookie and sends
+  // the user back to the homepage.
+  function handleLogout() {
+    setAccountOpen(false);
+    setMenuOpen(false);
+    signOut({ callbackUrl: "/" });
+  }
+
+  // Placeholder avatar — a simple person silhouette. Will be replaced by a
+  // user image (next/image) once profile pictures are wired up. Kept as a
+  // local component to centralise the SVG and avoid duplication between the
+  // desktop and mobile auth areas.
+  function AvatarIcon({ size = 18 }: { size?: number }) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    );
+  }
 
   return (
     /*
@@ -67,7 +125,7 @@ export default function Navbar() {
           <button
             onClick={() => setBannerVisible(false)}
             aria-label="Dismiss announcement"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-amber-600/20 hover:bg-amber-700/40 transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-amber-600/20 hover:bg-amber-700/40 transition-colors cursor-pointer"
           >
             <svg
               width="13"
@@ -191,7 +249,7 @@ export default function Navbar() {
               Three-zone row:
                 Left  → home icon (shrink-0)
                 Center → nav links, hidden below lg (flex-1, justify-center)
-                Right  → auth buttons (shrink-0, min-w-fit) + mobile hamburger
+                Right  → auth area (shrink-0, min-w-fit) + mobile hamburger
               The right zone never shrinks, so buttons cannot wrap.
             */}
             <div className="flex items-center h-14 gap-2">
@@ -230,7 +288,7 @@ export default function Navbar() {
                 <div ref={moreRef} className="relative">
                   <button
                     onClick={() => setMoreOpen((o) => !o)}
-                    className="flex items-center gap-1 px-3.5 py-2 rounded-lg text-sm font-medium text-indigo-300 hover:text-white hover:bg-indigo-800/60 transition-all"
+                    className="flex items-center gap-1 px-3.5 py-2 rounded-lg text-sm font-medium text-indigo-300 hover:text-white hover:bg-indigo-800/60 transition-all cursor-pointer"
                   >
                     More
                     <svg
@@ -270,30 +328,128 @@ export default function Navbar() {
               <div className="flex-1 lg:hidden" />
 
               {/*
-                Auth buttons.
+                Auth area (desktop / sm+).
                 - shrink-0  → never shrink
-                - min-w-fit → always reserve their natural width
-                - whitespace-nowrap on each button → text never wraps
-                Visible from sm upward; replaced by the mobile menu on xs.
+                - min-w-fit → always reserve natural width
+                Three render branches:
+                  1. Loading  → subtle placeholder to prevent layout shift
+                  2. Authed   → avatar pill with Dashboard / Logout dropdown
+                  3. Unauthed → existing Log in / Sign up buttons
               */}
               <div className="hidden sm:flex items-center gap-2 shrink-0 min-w-fit">
-                <Link
-                  href="/coming-soon"
-                  className="px-4 py-2 rounded-full border border-indigo-600 text-indigo-300 text-sm font-semibold hover:bg-indigo-800/50 hover:text-white transition-all whitespace-nowrap"
-                >
-                  Log in
-                </Link>
-                <Link
-                  href="/coming-soon"
-                  className="px-4 py-2 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 text-sm font-bold hover:scale-105 transition-transform shadow-sm whitespace-nowrap"
-                >
-                  Sign up
-                </Link>
+                {isAuthLoading ? (
+                  // Width roughly matches both the avatar pill and the
+                  // login/signup pair so the surrounding layout does not
+                  // shift once the session resolves.
+                  <div
+                    className="h-9 w-20 rounded-full bg-indigo-800/50 animate-pulse"
+                    aria-hidden="true"
+                  />
+                ) : isAuthenticated ? (
+                  <div ref={accountRef} className="relative">
+                    <button
+                      onClick={() => setAccountOpen((o) => !o)}
+                      aria-label="Account menu"
+                      aria-haspopup="menu"
+                      aria-expanded={accountOpen}
+                      className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border border-indigo-700/60 hover:border-indigo-500 hover:bg-indigo-800/50 transition-all cursor-pointer"
+                    >
+                      {/* Avatar circle — placeholder for future profile image */}
+                      <span className="w-7 h-7 rounded-full bg-amber-400 text-indigo-950 flex items-center justify-center">
+                        <AvatarIcon size={16} />
+                      </span>
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className={`text-indigo-300 transition-transform duration-200 ${
+                          accountOpen ? "rotate-180" : ""
+                        }`}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+
+                    {accountOpen && (
+                      <div
+                        role="menu"
+                        className="absolute top-full right-0 mt-2 w-44 bg-indigo-900 border border-indigo-700/60 rounded-xl shadow-xl shadow-indigo-950/60 py-1.5 z-50 overflow-hidden"
+                      >
+                        <Link
+                          href="/dashboard"
+                          role="menuitem"
+                          onClick={() => setAccountOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-indigo-300 hover:text-white hover:bg-indigo-800/60 transition-all"
+                        >
+                          {/* Dashboard icon */}
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <rect x="3" y="3" width="7" height="9" />
+                            <rect x="14" y="3" width="7" height="5" />
+                            <rect x="14" y="12" width="7" height="9" />
+                            <rect x="3" y="16" width="7" height="5" />
+                          </svg>
+                          Dashboard
+                        </Link>
+                        <button
+                          role="menuitem"
+                          onClick={handleLogout}
+                          className="w-full text-left flex items-center gap-2.5 px-4 py-2.5 text-sm text-indigo-300 hover:text-white hover:bg-indigo-800/60 transition-all cursor-pointer"
+                        >
+                          {/* Logout icon */}
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <polyline points="16 17 21 12 16 7" />
+                            <line x1="21" y1="12" x2="9" y2="12" />
+                          </svg>
+                          Logout
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      className="px-4 py-2 rounded-full border border-indigo-600 text-indigo-300 text-sm font-semibold hover:bg-indigo-800/50 hover:text-white transition-all whitespace-nowrap"
+                    >
+                      Log in
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="px-4 py-2 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 text-sm font-bold hover:scale-105 transition-transform shadow-sm whitespace-nowrap"
+                    >
+                      Sign up
+                    </Link>
+                  </>
+                )}
               </div>
 
               {/* Mobile hamburger */}
               <button
-                className="lg:hidden w-10 h-10 flex items-center justify-center text-indigo-300 hover:text-white shrink-0"
+                className="lg:hidden w-10 h-10 flex items-center justify-center text-indigo-300 hover:text-white shrink-0 cursor-pointer"
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label="Toggle menu"
               >
@@ -345,19 +501,52 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+
+            {/*
+              Mobile auth area — mirrors the desktop logic but renders as
+              full-width buttons in the drawer for easy tap targets.
+            */}
             <div className="flex gap-3 pt-4 border-t border-indigo-800/60 mt-2">
-              <Link
-                href="/coming-soon"
-                className="flex-1 text-center px-4 py-2.5 rounded-full border border-indigo-600 text-indigo-300 text-sm font-semibold hover:bg-indigo-800/50 transition-all"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/coming-soon"
-                className="flex-1 text-center px-4 py-2.5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 text-sm font-bold"
-              >
-                Sign up
-              </Link>
+              {isAuthLoading ? (
+                <div
+                  className="flex-1 h-10 rounded-full bg-indigo-800/50 animate-pulse"
+                  aria-hidden="true"
+                />
+              ) : isAuthenticated ? (
+                <>
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-indigo-600 text-indigo-300 text-sm font-semibold hover:bg-indigo-800/50 transition-all"
+                  >
+                    <AvatarIcon size={16} />
+                    Dashboard
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex-1 text-center px-4 py-2.5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 text-sm font-bold cursor-pointer"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex-1 text-center px-4 py-2.5 rounded-full border border-indigo-600 text-indigo-300 text-sm font-semibold hover:bg-indigo-800/50 transition-all"
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex-1 text-center px-4 py-2.5 rounded-full bg-linear-to-r from-amber-500 to-amber-400 text-indigo-950 text-sm font-bold"
+                  >
+                    Sign up
+                  </Link>
+                </>
+              )}
             </div>
           </nav>
         </div>

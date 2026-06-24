@@ -24,7 +24,6 @@ import { render } from "@react-email/render";
 import { PaymentVerificationEmail } from "@/emails/Paymentverificationemail";
 
 // Initialise Resend with the API key from environment variables
-console.log("BREAK 0", process.env.RESEND_API_KEY);
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ── Helper: format a datetime-local string into something readable ──────────
@@ -107,8 +106,6 @@ export async function POST(request: NextRequest) {
         isSchoolCopy: true,
       }) as React.ReactElement,
     );
-
-    console.log("EMAIL SENT");
 
     await resend.emails.send({
       from:
