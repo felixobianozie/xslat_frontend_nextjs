@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 
+  Utility class: scrollbar-hide
+  Hides the scrollbar visually while keeping the element scrollable.
+  Added globally here (instead of inline styles) so it can be reused
+  as a single className on any scrollable container across the app,
+  e.g. <div className="overflow-y-auto scrollbar-hide">
+*/
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, newer Edge (Webkit-based browsers) */
+}
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and legacy Edge */
+}

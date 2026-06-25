@@ -40,7 +40,7 @@ interface ResultsDetailPaneProps {
 }
 
 function fullName(s: ArmStudent): string {
-  return `${s.first_name}${s.middle_name ? ` ${s.middle_name}` : ""} ${s.last_name}`;
+  return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
 }
 
 export default function ResultsDetailPane({

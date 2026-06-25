@@ -13,10 +13,10 @@ export default function DashboardLayout({
       <div className="flex h-screen bg-slate-50 overflow-hidden">
         <Leftbar />
 
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden lg:mx-5">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden lg:mx-5 ">
           <Topbar />
-          <main className="flex-1 overflow-y-auto px-4 lg:px-0">
-            <div className="max-w-5xl mx-auto py-6 lg:py-8">{children}</div>
+          <main className="flex-1 overflow-y-auto px-4 lg:px-1 scrollbar-hide">
+            <div className="mx-auto py-6 lg:py-8">{children}</div>
           </main>
         </div>
 

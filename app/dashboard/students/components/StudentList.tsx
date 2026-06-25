@@ -686,7 +686,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleStudent(student.id)}
-                                aria-label={`Select ${student.first_name} ${student.last_name}`}
+                                aria-label={`Select ${student.last_name} ${student.first_name}`}
                                 className="accent-violet-600 cursor-pointer"
                               />
                             </td>
@@ -695,11 +695,10 @@ export default function StudentList({ initialData }: StudentListProps) {
                             <td className="px-5">
                               <div className="flex flex-col">
                                 <span className="font-medium text-slate-800">
-                                  {student.first_name}{" "}
+                                  {student.last_name} {student.first_name}{" "}
                                   {student.middle_name
                                     ? `${student.middle_name} `
                                     : ""}
-                                  {student.last_name}
                                 </span>
                                 <span className="text-[10px] text-slate-400">
                                   {student.public_id}
@@ -803,7 +802,10 @@ export default function StudentList({ initialData }: StudentListProps) {
                             />
                             <div className="flex flex-col min-w-0">
                               <span className="text-sm font-semibold text-slate-800 truncate">
-                                {student.first_name} {student.last_name}
+                                {student.last_name} {student.first_name}{" "}
+                                {student.middle_name
+                                  ? `${student.middle_name} `
+                                  : ""}
                               </span>
                               <span className="text-[10px] text-slate-400">
                                 {student.public_id}

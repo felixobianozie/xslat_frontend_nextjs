@@ -76,7 +76,7 @@ interface PaginatedResponse<T> {
 
 // Build a display-friendly full name from the nested user fields.
 function fullName(s: ArmStudent): string {
-  return `${s.first_name}${s.middle_name ? ` ${s.middle_name}` : ""} ${s.last_name}`;
+  return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
 }
 
 export default function ClassMembersTab() {
