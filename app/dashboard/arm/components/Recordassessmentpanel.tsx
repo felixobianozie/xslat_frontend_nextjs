@@ -404,7 +404,8 @@ export default function RecordAssessmentPanel({
                         <td className="py-2.5 pr-4">
                           <div className="flex flex-col">
                             <span className="text-slate-800">
-                              {student.first_name} {student.last_name}
+                              {student.last_name} {student.first_name}{" "}
+                              {student?.middle_name ?? ""}
                             </span>
                             {student.public_id && (
                               <span className="text-[10px] text-slate-400 font-mono">
