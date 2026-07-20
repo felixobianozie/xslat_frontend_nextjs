@@ -16,15 +16,15 @@
 //   - filter             → which sub-view (ACADEMICS / BEHAVIOURS / SKILLS / GENERAL).
 //   - submitAction       → which broadsheet modal variant to open (null = closed).
 //
-// Aggregates are computed once per render via useMemo, keyed by the arm's
-// assessment array + grading format + subject count. React Query handles the
-// fetch caching so re-renders don't re-fetch.
-//
 // Backend wiring:
 //   - Roster:  GET student/list/?school-id=…&arm-id=…&page-size=100
-//   - Subjects: GET subject/list/?school-id=…&term-id=…&arm=…
-//   - Assessment data: read straight from arm.assessments (delivered by
-//     arm/detail/ via ArmDetailsProvider).
+//   - Results: GET arm/assessment/compute/?school-id=…&arm-id=…
+//
+//   The compute endpoint returns the whole ClassAssessmentResult (per-student
+//   subject totals + grades, behaviour/skill grades, class average, position,
+//   and the Pass/Fail decision) so nothing is aggregated on the client.
+//   Subject names/abbrs are carried on each row of the compute payload, so
+//   there is no separate subject/list/ fetch on this tab anymore.
 //
 // Broadsheet action button has FOUR status-driven variants:
 //   - broadsheet === "none"    → "Generate Broadsheet" (opens submit modal)
@@ -42,13 +42,12 @@ import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import TableLoader from "../../components/Tableloader";
 import EmptyState from "../../components/Emptystate";
-import ResultsFilter from "./Resultsfilter";
+import ResultsFilter, { ResultsFilterKey } from "./Resultsfilter";
 import ResultsMasterList from "./Resultsmasterlist";
 import ResultsDetailPane from "./Resultsdetailpane";
 import BroadsheetSubmitModal, {
   BroadsheetSubmitAction,
 } from "./Broadsheetsubmitmodal";
-import { computeClassAssessment, ResultsFilterKey } from "./results-aggregates";
 import type { ApiEnvelope } from "../page";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -81,7 +80,7 @@ export default function ResultsTab() {
   const { armId, arm } = useArmDetails();
   const { clientAuthFetch } = useClientAuthFetch();
 
-  const [filter, setFilter] = useState<ResultsFilterKey>("ACADEMICS");
+  const [filter, setFilter] = useState<ResultsFilterKey>("GENERAL");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
@@ -91,13 +90,15 @@ export default function ResultsTab() {
   const [submitAction, setSubmitAction] =
     useState<BroadsheetSubmitAction | null>(null);
 
-  // The subject endpoint requires term-id — same chain we use elsewhere.
-  const termId = arm?.level.section.term?.id ?? "";
+  // The subject endpoint used to be needed here to divide by class subject
+  // count when averaging locally. Averages are now computed server-side, so
+  // this tab no longer fetches subjects at all — subject names/abbrs come
+  // through on each row of the compute payload.
 
   // ── Data ──────────────────────────────────────────────────────────────────
-  // Two queries: students for the master list, subjects for the academic table.
-  // Both reuse the same cache keys as the rest of the page so navigating
-  // between tabs doesn't trigger re-fetches.
+  // Two queries: students for the master list, and the server-computed class
+  // assessment for the detail pane. Both reuse cache keys that stay stable
+  // across tab switches, so navigating away and back doesn't re-fetch.
 
   const {
     data: studentsData,
@@ -116,21 +117,25 @@ export default function ResultsTab() {
     enabled: !!armId,
   });
 
-  const { data: subjectsData, isPending: subjectsPending } = useQuery<
-    ApiEnvelope<ArmSubject[]>
-  >({
-    queryKey: ["arm-subjects", armId],
+  // Server-side aggregate: per-student totals, grades, positions, decisions,
+  // plus arm-level class average and student population.
+  // Cache key `["arm-assessment-compute", armId]` — score / remark mutations
+  // elsewhere on the page invalidate this key so the view refreshes.
+  const {
+    data: classResultData,
+    isPending: classResultPending,
+    isError: classResultIsError,
+    error: classResultErr,
+  } = useQuery<ApiEnvelope<ClassAssessmentResult>>({
+    queryKey: ["arm-assessment-compute", armId],
     queryFn: async () => {
-      const url =
-        `subject/list/?school-id=${SCHOOL_ID}` +
-        `&term-id=${termId}` +
-        `&arm=${armId}`;
+      const url = `arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`;
       const { data, error } =
-        await clientAuthFetch<ApiEnvelope<ArmSubject[]>>(url);
+        await clientAuthFetch<ApiEnvelope<ClassAssessmentResult>>(url);
       if (error) throw new Error(error.message);
       return data!;
     },
-    enabled: !!armId && !!termId,
+    enabled: !!armId,
   });
 
   useEffect(() => {
@@ -143,33 +148,28 @@ export default function ResultsTab() {
     }
   }, [studentsError, studentsErr]);
 
-  const students = studentsData?.data ?? [];
-  const subjects = subjectsData?.data ?? [];
+  // Compute-endpoint failures deserve their own toast — an error here means
+  // the results side is empty even if the roster loaded fine.
+  useEffect(() => {
+    if (classResultIsError && classResultErr) {
+      toast.error(
+        classResultErr instanceof Error
+          ? classResultErr.message
+          : "Failed to load computed results.",
+      );
+    }
+  }, [classResultIsError, classResultErr]);
 
-  // ── Computed aggregates ───────────────────────────────────────────────────
-  // Pure function — recomputes only when its inputs change. Memo avoids
-  // re-running the aggregation on every render (e.g. while typing in search).
-  const classResult = useMemo(
-    () =>
-      computeClassAssessment(
-        arm?.assessments,
-        arm?.cog_grading_format,
-        arm?.aff_grading_format,
-        arm?.psy_grading_format,
-        // Drives the Pass/Fail decision per student — see decideOutcome()
-        // in results-aggregates.ts for the full evaluation flow.
-        arm?.pass_rule,
-        subjects.length,
-      ),
-    [
-      arm?.assessments,
-      arm?.cog_grading_format,
-      arm?.aff_grading_format,
-      arm?.psy_grading_format,
-      arm?.pass_rule,
-      subjects.length,
-    ],
-  );
+  const students = studentsData?.data ?? [];
+
+  // Fallback keeps downstream props strictly-typed as ClassAssessmentResult.
+  // While the query is pending or errored, the detail pane still renders
+  // (with "—" placeholders) rather than blanking out.
+  const classResult: ClassAssessmentResult = classResultData?.data ?? {
+    class_average: 0,
+    student_population: 0,
+    students: {},
+  };
 
   // Currently selected student record (full object, not just id) — null when
   // no selection yet (initial state) or after the selected id falls out of
@@ -184,9 +184,10 @@ export default function ResultsTab() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Top loading: only block render until students AND subjects resolve once.
-  // After that, partial reloads use the inline loaders inside each pane.
-  if (studentsPending && subjectsPending) {
+  // Top loading: only block render until students AND the class result
+  // resolve once. After that, partial reloads use the inline loaders inside
+  // each pane.
+  if (studentsPending && classResultPending) {
     return <TableLoader rows={6} />;
   }
 
@@ -263,7 +264,6 @@ export default function ResultsTab() {
                 allStudents={students}
                 classResult={classResult}
                 filter={filter}
-                subjects={subjects}
                 onBack={() => setSelectedStudentId(null)}
                 onSelect={(s) => setSelectedStudentId(s.id)}
               />

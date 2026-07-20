@@ -290,9 +290,14 @@ export default function RecordAssessmentPanel({
 
     onSuccess: () => {
       toast.success("Assessment saved.");
-      // Refresh the arm detail so the assessment array reflects the new
-      // scores on the next open / view-mode switch.
+      // Refresh the arm detail so arm.assessments reflects the new scores.
       queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      // Also invalidate the compute payload — the Results tab reads its
+      // per-subject totals, grades, averages, and positions from there,
+      // and any of those may have moved after this save.
+      queryClient.invalidateQueries({
+        queryKey: ["arm-assessment-compute", armId],
+      });
       setTouched(new Set());
     },
 

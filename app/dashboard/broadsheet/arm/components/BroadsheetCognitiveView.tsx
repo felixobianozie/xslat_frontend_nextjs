@@ -313,10 +313,16 @@ export default function BroadsheetCognitiveView({
                     return (
                       <Fragment key={`${student.id}-${subject.id}-group`}>
                         {units.map((unit, idx) => {
-                          const rawScore =
-                            subjectResult?.scores[unit.display_order];
-                          // Score === -1 represents "absent" by the
-                          // convention in results-aggregates.ts.
+                          // The compute-endpoint response positions the
+                          // `scores` array against the units sorted by
+                          // display_order ascending — index i in `scores`
+                          // corresponds to `units[i]` (units is already
+                          // sorted above). Reading by `unit.display_order`
+                          // would break when display_order values aren't
+                          // contiguous.
+                          const rawScore = subjectResult?.scores[idx];
+                          // Score === -1 represents "absent" (see
+                          // results.d.ts for the score conventions).
                           const display =
                             rawScore === -1 ? "ABS" : (rawScore ?? "—");
                           return (

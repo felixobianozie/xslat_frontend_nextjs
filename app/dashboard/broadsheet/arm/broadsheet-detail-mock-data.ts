@@ -545,3 +545,298 @@ export async function fetchBroadsheetSubjects(
     },
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mock compute — turns raw MOCK_ASSESSMENTS into the compute-endpoint payload.
+//
+// The real backend does this in academics/services/results_aggregation.py.
+// Here we reproduce just enough to keep the broadsheet UI working against
+// mocked data — no exclusions, no ordinal/dense ranking, no pass-rule branch
+// coverage beyond the mock arm's own "score" rule. Any real behaviour lives
+// on the backend; this helper exists so BroadsheetDetailsProvider can consume
+// the compute-endpoint shape without importing results-aggregates.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Grade-band lookup for cognitive totals. Mirrors the backend helper of the
+// same intent; returns null when the score is negative (absent) or when no
+// band covers it.
+function mockFindGrade(
+  grades: ArmGradingFormatGrade[],
+  score: number,
+): { symbol: string; remark: string; passed: boolean } | null {
+  if (score < 0) return null;
+  for (const g of grades) {
+    if (score >= g.low && score <= g.high) {
+      return { symbol: g.symbol, remark: g.remark, passed: Boolean(g.passed) };
+    }
+  }
+  return null;
+}
+
+// Trait grade resolver — folds in the "absent" (-1) special case so the
+// caller doesn't need to.
+function mockResolveTrait(
+  grades: ArmGradingFormatGrade[],
+  score: number,
+): { grade_symbol: string | null; remark: string | null; is_absent: boolean } {
+  if (score === -1) {
+    return { grade_symbol: null, remark: "Absent", is_absent: true };
+  }
+  const g = mockFindGrade(grades, score);
+  return {
+    grade_symbol: g?.symbol ?? null,
+    remark: g?.remark ?? null,
+    is_absent: false,
+  };
+}
+
+// Round to 2dp without floating-point drift. Same rule as the real backend.
+function mockRound2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// Build the compute-endpoint payload for the mock arm. Pure function of its
+// inputs; called once inside fetchBroadsheetClassResult.
+function computeMockClassResult(
+  arm: ClassArm,
+  assessments: ArmAssessmentRecord[],
+): ClassAssessmentResult {
+  const cogGrades = arm.cog_grading_format?.grades ?? [];
+  const affGrades = arm.aff_grading_format?.grades ?? [];
+  const psyGrades = arm.psy_grading_format?.grades ?? [];
+
+  // Canonical unit ordering — units sorted by display_order ascending. The
+  // subject `scores` array is positioned against THIS sequence (index i
+  // holds the score for orderedUnits[i]). Mirrors the backend contract.
+  const orderedUnits = [...(arm.cognitive_assessment_format?.units ?? [])].sort(
+    (a, b) => a.display_order - b.display_order,
+  );
+  const unitIndexById = new Map<string, number>();
+  orderedUnits.forEach((u, idx) => unitIndexById.set(u.id, idx));
+  const unitCount = orderedUnits.length;
+
+  // Every subject in an arm shares the same cognitive format, so this cap
+  // is the same for every subject and every student.
+  const subjectMaxScore = orderedUnits.reduce(
+    (sum, u) => sum + (u.max_score ?? 0),
+    0,
+  );
+
+  // Zero-initialised grading-summary template. Keys are the distinct leading
+  // alphabetic prefixes on the arm's cognitive grade symbols (e.g. A, B, C).
+  const gradingSummaryTemplate: Record<string, number> = {};
+  for (const g of cogGrades) {
+    const prefix = g.symbol.match(/^[A-Za-z]+/)?.[0] ?? "";
+    if (prefix) gradingSummaryTemplate[prefix] = 0;
+  }
+
+  // Simple, mock-only pass rule: the arm's rule is a `score` type with a
+  // percentage threshold; treat everyone whose total ≥ threshold × max as
+  // Pass, else Fail. When the arm has no rule, decision is "—".
+  const passRule = arm.pass_rule;
+  const passBaseValue =
+    passRule && typeof passRule.base_value === "string"
+      ? parseFloat(passRule.base_value)
+      : NaN;
+
+  const rows: StudentAssessmentResult[] = [];
+  let totalOfAverages = 0;
+
+  for (const assessment of assessments) {
+    // ── Subject rows ──────────────────────────────────────────────────────
+    const subjects: Record<string, SubjectAssessmentResult> = {};
+    let studentTotal = 0;
+
+    // We iterate the ARM's SubjectArm list for display_order lookup. The
+    // mock file doesn't carry SubjectArm rows separately; use the subject's
+    // definition order as a stand-in. Deterministic and stable.
+    for (const cog of assessment.cognitive_records) {
+      const scores: (number | null)[] = new Array(unitCount).fill(null);
+      for (const entry of cog.scores) {
+        const idx = unitIndexById.get(entry.unit.id);
+        if (idx === undefined) continue;
+        scores[idx] = entry.score;
+      }
+      const total = scores.reduce<number>(
+        (sum, s) => (typeof s === "number" && s > 0 ? sum + s : sum),
+        0,
+      );
+      studentTotal += total;
+      const grade = mockFindGrade(cogGrades, total);
+      subjects[cog.subject.id] = {
+        subject_id: cog.subject.id,
+        subject_definition_id: cog.subject.definition?.id ?? null,
+        subject_name: cog.subject.definition?.name ?? null,
+        subject_abbr: cog.subject.definition?.abbr ?? null,
+        // Mock proxy for SubjectArm.display_order: same-order iteration
+        // through cognitive_records. Good enough for a mock; real backend
+        // uses the actual SubjectArm.display_order.
+        display_order: Object.keys(subjects).length,
+        scores,
+        total,
+        grade_symbol: grade?.symbol ?? null,
+        remark: grade?.remark ?? null,
+      };
+    }
+
+    // Grading summary — count subjects per grade-symbol prefix. Clone the
+    // template so every student surfaces the same keys, even if the count
+    // is 0 for some prefix.
+    const grading_summary: Record<string, number> = {
+      ...gradingSummaryTemplate,
+    };
+    for (const s of Object.values(subjects)) {
+      if (!s.grade_symbol) continue;
+      const prefix = s.grade_symbol.match(/^[A-Za-z]+/)?.[0] ?? "";
+      if (prefix && prefix in grading_summary) {
+        grading_summary[prefix] += 1;
+      }
+    }
+
+    // ── Behaviours ───────────────────────────────────────────────────────
+    const behaviours: Record<string, TraitAssessmentResult> = {};
+    const behaviourRows: TraitAssessmentResult[] = [];
+    for (const aff of assessment.affective_records) {
+      for (const entry of aff.scores) {
+        const beh = entry.behaviour;
+        const resolved = mockResolveTrait(affGrades, entry.score);
+        behaviourRows.push({
+          trait_id: beh.id,
+          // The score-entry type marks these as optional even though every
+          // real backend response populates them. Fall back to safe defaults.
+          trait_name: beh.name ?? "",
+          display_order: beh.display_order ?? 0,
+          max_score: beh.max_score ?? 0,
+          score: entry.score,
+          grade_symbol: resolved.grade_symbol,
+          remark: resolved.remark,
+          is_absent: resolved.is_absent,
+        });
+      }
+    }
+    // Sort by display_order and build the dict — the insertion order defines
+    // Object.values() iteration order for downstream consumers.
+    behaviourRows.sort((a, b) => a.display_order - b.display_order);
+    for (const row of behaviourRows) behaviours[row.trait_id] = row;
+
+    // ── Skills ───────────────────────────────────────────────────────────
+    const skills: Record<string, TraitAssessmentResult> = {};
+    const skillRows: TraitAssessmentResult[] = [];
+    for (const psy of assessment.psychomotor_records) {
+      for (const entry of psy.scores) {
+        const act = entry.activity;
+        const resolved = mockResolveTrait(psyGrades, entry.score);
+        skillRows.push({
+          trait_id: act.id,
+          trait_name: act.name ?? "",
+          display_order: act.display_order ?? 0,
+          max_score: act.max_score ?? 0,
+          score: entry.score,
+          grade_symbol: resolved.grade_symbol,
+          remark: resolved.remark,
+          is_absent: resolved.is_absent,
+        });
+      }
+    }
+    skillRows.sort((a, b) => a.display_order - b.display_order);
+    for (const row of skillRows) skills[row.trait_id] = row;
+
+    // ── Roll-up ──────────────────────────────────────────────────────────
+    // Mock uses the FULL subject list as the divisor (no per-student
+    // exclusions in the mock data). Real backend computes this per student.
+    const subjectCount = Object.keys(subjects).length;
+    const average =
+      subjectCount > 0 ? mockRound2(studentTotal / subjectCount) : 0;
+    totalOfAverages += average;
+
+    // Decision — simple mock branch on the arm's pass rule if it looks like
+    // a percentage-score rule. Otherwise "—".
+    let decision: "Pass" | "Fail" | "—" = "—";
+    if (
+      passRule &&
+      passRule.active !== false &&
+      passRule.type === "score" &&
+      Number.isFinite(passBaseValue)
+    ) {
+      const maxAggregate = subjectMaxScore * subjectCount;
+      const requiredMark =
+        passRule.decide_by === "percentage"
+          ? passBaseValue * maxAggregate
+          : passBaseValue;
+      decision = studentTotal >= requiredMark ? "Pass" : "Fail";
+    }
+
+    rows.push({
+      assessment_id: assessment.id,
+      student_id: assessment.student.id,
+      student_public_id: assessment.student.public_id ?? null,
+      student_first_name: assessment.student.first_name,
+      student_middle_name: assessment.student.middle_name ?? null,
+      student_last_name: assessment.student.last_name,
+      student_gender: assessment.student.gender ?? null,
+      total_score: studentTotal,
+      total_score_obtainable: subjectMaxScore * subjectCount,
+      subject_count: subjectCount,
+      average,
+      // Filled in below once every student's average is known.
+      position: 0,
+      decision,
+      subjects,
+      grading_summary,
+      behaviours,
+      skills,
+      teachers_remark: assessment.teachers_remark ?? "",
+      supervisors_remark: assessment.supervisors_remark ?? "",
+    });
+  }
+
+  const student_population = rows.length;
+  const class_average =
+    student_population > 0
+      ? mockRound2(totalOfAverages / student_population)
+      : 0;
+
+  // "Competition" ranking (backend default). Averages sorted desc; ties
+  // share the same position, and the next distinct position is skipped by
+  // the size of the tie group.
+  const ranked = [...rows].sort((a, b) => b.average - a.average);
+  let currentPosition = 0;
+  let previousAverage: number | null = null;
+  ranked.forEach((row, index) => {
+    if (previousAverage === null || row.average !== previousAverage) {
+      currentPosition = index + 1;
+      previousAverage = row.average;
+    }
+    row.position = currentPosition;
+  });
+
+  // Insertion order = position ascending so Object.values() walks the
+  // cohort in leaderboard order (mirrors backend behaviour).
+  ranked.sort((a, b) => a.position - b.position);
+  const students: Record<string, StudentAssessmentResult> = {};
+  for (const row of ranked) students[row.student_id] = row;
+
+  return { class_average, student_population, students };
+}
+
+// Pre-compute once at module load so multiple fetches share the same object
+// and repeated broadsheet renders never re-run the aggregation.
+const MOCK_CLASS_RESULT: ClassAssessmentResult = computeMockClassResult(
+  MOCK_ARM_DETAIL,
+  MOCK_ASSESSMENTS,
+);
+
+// MOCK: GET arm/assessment/compute/?school-id=…&arm-id=<armId>
+// Real call:
+//   clientAuthFetch(`arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`)
+export async function fetchBroadsheetClassResult(
+  _armId: string,
+): Promise<MockApiResponse<ApiEnvelope<ClassAssessmentResult>>> {
+  await delay();
+  return {
+    data: {
+      message: "Class assessment computed successfully.",
+      data: MOCK_CLASS_RESULT,
+    },
+  };
+}

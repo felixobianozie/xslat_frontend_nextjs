@@ -16,31 +16,25 @@
 //   in a single provider keeps the data-loading logic in one place and
 //   avoids prop drilling through six layers of components.
 //
-// Why compute aggregates here?
-//   The class-level computation (per-student totals, grades, positions) is
-//   identical across every view in the page, so memoising it once at the
-//   provider level means the heavy reduce only runs when the underlying
-//   inputs actually change.
+// Where the aggregates come from:
+//   The class-level result (per-student totals, grades, positions, decisions,
+//   plus class average) is fetched as a separate query — it comes from the
+//   arm/assessment/compute/ endpoint on the real backend. On the mock the
+//   same shape is produced by `fetchBroadsheetClassResult`, which shares the
+//   seed data with the raw arm.assessments returned above.
 //
-// MOCK: queryFn calls the local broadsheet-detail-mock-data helpers. To wire
-// to the real backend, replace each one with the matching clientAuthFetch
-// call shown in the comment above it.
+// MOCK: every queryFn calls a local broadsheet-detail-mock-data helper. To
+// wire this page to the real backend, replace each helper with the matching
+// clientAuthFetch call shown in the comment above it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {
-  createContext,
-  ReactNode,
-  useContext,
-  useEffect,
-  useMemo,
-} from "react";
+import { createContext, ReactNode, useContext, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 
-import { computeClassAssessment } from "../../../arm/components/results-aggregates";
-import type { ClassAssessmentResult } from "../../../arm/components/results-aggregates";
 import {
   fetchBroadsheetArmDetail,
+  fetchBroadsheetClassResult,
   fetchBroadsheetStudents,
   fetchBroadsheetSubjects,
 } from "../broadsheet-detail-mock-data";
@@ -119,6 +113,23 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
+  // ── Query 4: class assessment result ────────────────────────────────────
+  // MOCK: fetchBroadsheetClassResult. Real call:
+  //   clientAuthFetch(`arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`)
+  // This replaces the old client-side computeClassAssessment memo — the
+  // real backend now derives the whole class result server-side and returns
+  // it as the compute-endpoint payload.
+  const { data: classResultData, isPending: classResultPending } = useQuery({
+    queryKey: ["broadsheet-class-result", armId],
+    queryFn: async () => {
+      const { data, error } = await fetchBroadsheetClassResult(armId);
+      if (error) throw new Error(error.message);
+      return data!;
+    },
+    enabled: !!armId,
+    refetchOnWindowFocus: false,
+  });
+
   // Surface the arm-fetch error to the user via toast. We watch just the arm
   // query here because it's the gating one — without an arm record, the
   // rest of the page can't render anything meaningful.
@@ -137,28 +148,14 @@ export function BroadsheetDetailsProvider({
   const students = studentsData?.data ?? [];
   const subjects = subjectsData?.data ?? [];
 
-  // Pre-compute per-student/class aggregates so every table downstream can
-  // read them straight from context. computeClassAssessment is pure, so
-  // memoisation is purely a performance optimisation.
-  const classResult = useMemo(
-    () =>
-      computeClassAssessment(
-        arm?.assessments,
-        arm?.cog_grading_format,
-        arm?.aff_grading_format,
-        arm?.psy_grading_format,
-        arm?.pass_rule,
-        subjects.length,
-      ),
-    [
-      arm?.assessments,
-      arm?.cog_grading_format,
-      arm?.aff_grading_format,
-      arm?.psy_grading_format,
-      arm?.pass_rule,
-      subjects.length,
-    ],
-  );
+  // Fallback keeps downstream consumers strictly-typed as ClassAssessmentResult
+  // while the query is pending or errored (rare on the mock; matters when this
+  // page eventually goes live). Downstream views handle empty student maps.
+  const classResult: ClassAssessmentResult = classResultData?.data ?? {
+    class_average: 0,
+    student_population: 0,
+    students: {},
+  };
 
   // We consider the page "pending" only while the arm query is still in
   // flight. Students and subjects loading slightly later just means a few
@@ -177,12 +174,13 @@ export function BroadsheetDetailsProvider({
     error: armError,
   };
 
-  // Briefly note when students/subjects are still loading — useful for
+  // Briefly note when secondary queries are still loading — useful for
   // child components that want to show a more nuanced loading state.
-  // (We don't return this in the context value because no consumer uses
-  //  it yet; it's kept commented as a note for future enhancement.)
+  // (We don't return these in the context value because no consumer uses
+  //  them yet; they're kept commented as a note for future enhancement.)
   void studentsPending;
   void subjectsPending;
+  void classResultPending;
 
   return (
     <BroadsheetDetailsContext.Provider value={value}>

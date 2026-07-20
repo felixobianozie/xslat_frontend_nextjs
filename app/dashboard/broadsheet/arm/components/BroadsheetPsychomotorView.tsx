@@ -181,8 +181,9 @@ export default function BroadsheetPsychomotorView({
               const position = psyRankings.positions[student.id] ?? "—";
 
               const assessedCount = studentResult
-                ? Object.values(studentResult.skills).filter((t) => !t.isAbsent)
-                    .length
+                ? Object.values(studentResult.skills).filter(
+                    (t) => !t.is_absent,
+                  ).length
                 : 0;
 
               return (

@@ -21,7 +21,7 @@ import { useArmDetails } from "../context/Armdetailsprovider";
 import ResultsAcademicsView from "./Resultsacademicsview";
 import ResultsTraitsGridView from "./Resultstraitsgridview";
 import ResultsGeneralView from "./Resultsgeneralview";
-import { ClassAssessmentResult, ResultsFilterKey } from "./results-aggregates";
+import { ResultsFilterKey } from "./Resultsfilter";
 
 interface ResultsDetailPaneProps {
   student: ArmStudent;
@@ -31,8 +31,6 @@ interface ResultsDetailPaneProps {
   classResult: ClassAssessmentResult;
   // Currently active filter view.
   filter: ResultsFilterKey;
-  // Subjects offered in this arm (used by the Academics view).
-  subjects: ArmSubject[];
   // Mobile back action — caller controls whether to show the back link.
   onBack: () => void;
   // Prev / Next selection — caller decides which student becomes active.
@@ -48,7 +46,6 @@ export default function ResultsDetailPane({
   allStudents,
   classResult,
   filter,
-  subjects,
   onBack,
   onSelect,
 }: ResultsDetailPaneProps) {
@@ -131,6 +128,8 @@ export default function ResultsDetailPane({
         position={studentResult?.position}
         decision={studentResult?.decision}
         populationCount={classResult.student_population}
+        gender={studentResult?.student_gender}
+        gradingSummary={studentResult?.grading_summary}
       />
 
       {/* ── Filter-specific view ────────────────────────────────────── */}
@@ -139,7 +138,6 @@ export default function ResultsDetailPane({
           student={student}
           studentResult={studentResult}
           units={arm?.cognitive_assessment_format?.units}
-          subjects={subjects}
         />
       )}
 
@@ -164,11 +162,7 @@ export default function ResultsDetailPane({
       )}
 
       {filter === "GENERAL" && (
-        <ResultsGeneralView
-          student={student}
-          studentResult={studentResult}
-          subjects={subjects}
-        />
+        <ResultsGeneralView student={student} studentResult={studentResult} />
       )}
 
       {/* ── Bottom prev/next nav ──────────────────────────────────────────
@@ -210,11 +204,15 @@ export default function ResultsDetailPane({
             disabled={!hasNext}
             className="flex-1 sm:flex-initial flex items-center gap-2.5 px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white text-slate-700 hover:border-violet-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-right min-w-0 cursor-pointer"
           >
-            <span className="flex flex-col min-w-0 ml-auto items-end">
-              <span className="text-[9px] uppercase tracking-wide text-slate-400 font-semibold">
+            {/* Column is right-pushed with ml-auto; children stretch to its
+                width (default items-stretch, NOT items-end) so `truncate` on
+                the name has a bounded parent and long names ellipsise
+                cleanly instead of overflowing left of the button. */}
+            <span className="flex flex-col min-w-0 ml-auto">
+              <span className="text-right text-[9px] uppercase tracking-wide text-slate-400 font-semibold">
                 Next Student
               </span>
-              <span className="truncate text-slate-700">
+              <span className="text-right truncate text-slate-700">
                 {hasNext ? fullName(allStudents[currentIndex + 1]) : "—"}
               </span>
             </span>
@@ -234,6 +232,16 @@ interface SummaryCardProps {
   position: number | undefined;
   decision: "Pass" | "Fail" | "—" | undefined;
   populationCount: number;
+  // Student's gender code as returned by the backend. Typically "M", "F",
+  // or "O" — expanded to Male/Female/Other in the UI. Any other value
+  // (or null) renders as-is / "—".
+  gender: string | null | undefined;
+  // Distribution of subject grade prefixes for this student — e.g.
+  // { A: 3, B: 4, C: 2 }. The backend seeds every prefix from the arm's
+  // grading format (so zero-count entries CAN appear in the map), but only
+  // the bands the student actually earned (count > 0) render as pills;
+  // zeros are filtered out below.
+  gradingSummary: Record<string, number> | undefined;
 }
 
 function SummaryCard({
@@ -242,45 +250,115 @@ function SummaryCard({
   position,
   decision,
   populationCount,
+  gender,
+  gradingSummary,
 }: SummaryCardProps) {
+  // Grade distribution — only the bands the student actually earned.
+  // Zero-count prefixes (e.g. F: 0 for a student who failed nothing) are
+  // excluded so the strip focuses on real earnings. Alphabetical sort
+  // keeps the order stable regardless of backend map iteration.
+  const gradeEntries = gradingSummary
+    ? Object.entries(gradingSummary)
+        .filter(([, count]) => count > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+    : [];
+
+  const hasGradingSummary = gradeEntries.length > 0;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-      <Stat label="Class Average" value={classAverage.toFixed(2)} />
-      <Stat
-        label="Student Average"
-        value={studentAverage !== undefined ? studentAverage.toFixed(2) : "—"}
-      />
-      <Stat
-        label="Position"
-        value={
-          position !== undefined
-            ? `${ordinal(position)} of ${populationCount}`
-            : "—"
-        }
-      />
-      <Stat
-        label="Decision"
-        value={decision ?? "—"}
-        tone={
-          decision === "Pass"
-            ? "success"
-            : decision === "Fail"
-              ? "danger"
-              : "neutral"
-        }
-      />
+    <div className="flex flex-col gap-2.5">
+      {/* Primary stat row — unchanged from the original layout. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <Stat label="Class Average" value={classAverage.toFixed(2)} />
+        <Stat
+          label="Student Average"
+          value={studentAverage !== undefined ? studentAverage.toFixed(2) : "—"}
+        />
+        <Stat
+          label="Position"
+          value={
+            position !== undefined
+              ? `${ordinal(position)} of ${populationCount}`
+              : "—"
+          }
+        />
+        <Stat
+          label="Decision"
+          value={decision ?? "—"}
+          tone={
+            decision === "Pass"
+              ? "success"
+              : decision === "Fail"
+                ? "danger"
+                : "neutral"
+          }
+        />
+      </div>
+
+      {/* Secondary row — gender + grade distribution. Hidden entirely when
+          neither field has data (e.g. student not in the compute payload). */}
+      {(gender || hasGradingSummary) && (
+        <div className="flex flex-col md:flex-row gap-2.5">
+          {gender !== undefined && (
+            <Stat
+              label="Gender"
+              value={formatGender(gender)}
+              // Narrow on desktop so it doesn't fight the pills for width.
+              className="md:w-40 md:shrink-0"
+            />
+          )}
+          {hasGradingSummary && (
+            <div className="flex-1 border border-slate-200 rounded-xl bg-white px-3 py-2.5">
+              <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
+                Grade Summary
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                {gradeEntries.map(([symbol, count]) => (
+                  <span
+                    key={symbol}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 rounded-md"
+                  >
+                    <span className="font-semibold">{symbol}</span>
+                    <span className="text-slate-400">×</span>
+                    <span className="tabular-nums">{count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+// Map the raw gender code from the backend to a readable label. Unknown
+// (or null) values fall back to "—"; any other non-empty string renders
+// as-is so a future backend change (e.g. spelled-out values) still works.
+function formatGender(g: string | null | undefined): string {
+  if (!g) return "—";
+  switch (g) {
+    case "M":
+      return "Male";
+    case "F":
+      return "Female";
+    case "O":
+      return "Other";
+    default:
+      return g;
+  }
 }
 
 function Stat({
   label,
   value,
   tone = "neutral",
+  className = "",
 }: {
   label: string;
   value: string;
   tone?: "neutral" | "success" | "danger";
+  className?: string;
 }) {
   const valueClass =
     tone === "success"
@@ -290,7 +368,9 @@ function Stat({
         : "text-slate-800";
 
   return (
-    <div className="border border-slate-200 rounded-xl bg-white px-3 py-2.5">
+    <div
+      className={`border border-slate-200 rounded-xl bg-white px-3 py-2.5 ${className}`}
+    >
       <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
         {label}
       </div>

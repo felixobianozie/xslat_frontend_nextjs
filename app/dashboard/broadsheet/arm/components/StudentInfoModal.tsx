@@ -21,8 +21,6 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Lock, X, BarChart3 } from "lucide-react";
 
-import type { StudentAssessmentResult } from "../../../arm/components/results-aggregates";
-
 // ── Variant union ─────────────────────────────────────────────────────────
 export type StudentInfoVariant = "performance" | "access";
 

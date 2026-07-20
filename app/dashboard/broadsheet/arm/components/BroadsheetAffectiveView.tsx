@@ -191,7 +191,7 @@ export default function BroadsheetAffectiveView({
               // Count of behaviours that actually have a non-absent score.
               const assessedCount = studentResult
                 ? Object.values(studentResult.behaviours).filter(
-                    (t) => !t.isAbsent,
+                    (t) => !t.is_absent,
                   ).length
                 : 0;
 

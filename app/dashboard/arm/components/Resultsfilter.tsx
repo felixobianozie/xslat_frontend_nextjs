@@ -19,7 +19,15 @@ import {
   FileBarChart,
   Smile,
 } from "lucide-react";
-import { ResultsFilterKey } from "./results-aggregates";
+
+// The four sub-views the results tab can render. Owned here because the
+// selector is the natural home for the enum — every consumer either sits
+// alongside this component in the results tree or is the tab itself.
+export type ResultsFilterKey =
+  | "ACADEMICS"
+  | "BEHAVIOURS"
+  | "SKILLS"
+  | "GENERAL";
 
 interface FilterOption {
   key: ResultsFilterKey;

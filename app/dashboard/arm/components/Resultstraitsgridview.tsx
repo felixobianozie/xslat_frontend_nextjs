@@ -43,7 +43,7 @@ import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
 import EmptyState from "../../components/Emptystate";
-import { resolveTraitGrade, TraitAssessmentResult } from "./results-aggregates";
+import { resolveTraitGrade } from "./trait-grade";
 import type { ApiEnvelope } from "../page";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -78,7 +78,8 @@ interface ResultsTraitsGridViewProps {
   traits: TraitDef[];
   // Grading format used to derive the grade column.
   gradingFormat: ArmGradingFormat | null | undefined;
-  // Existing results keyed by trait id — comes from computeClassAssessment.
+  // Existing results keyed by trait id — sourced from the arm/assessment/compute/
+  // endpoint (via the parent view's classResult).
   existingResults: Record<string, TraitAssessmentResult>;
   // When true, the Edit / Mark All Absent / Save controls are suppressed and
   // the grid renders as a pure read-only display. Used by ResultsGeneralView
@@ -250,8 +251,13 @@ export default function ResultsTraitsGridView({
       toast.success(
         kind === "affective" ? "Behaviours saved." : "Skills saved.",
       );
-      // Arm detail carries the updated assessment array on its next read.
+      // Arm detail carries the updated raw assessment array; the compute
+      // endpoint owns the derived grades/averages/positions. Both queries
+      // are invalidated so any view reading either stays fresh.
       queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      queryClient.invalidateQueries({
+        queryKey: ["arm-assessment-compute", armId],
+      });
       setEditing(false);
       setInputs({});
       setTouched(new Set());
@@ -282,8 +288,9 @@ export default function ResultsTraitsGridView({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">{copy.sectionBlurb}</p>
         </div>
-        {/* Action buttons are suppressed entirely in read-only mode — the
-            grid renders as a pure display. */}
+        {/* Edit toggle sits in the header slot; suppressed in read-only mode
+            and while already editing (Mark All Absent lives in the bottom
+            action bar during edit). */}
         {!readonly && !editing && (
           <button
             type="button"
@@ -292,18 +299,6 @@ export default function ResultsTraitsGridView({
           >
             <Pencil size={12} />
             Edit
-          </button>
-        )}
-        {!readonly && editing && (
-          <button
-            type="button"
-            onClick={handleMarkAllAbsent}
-            disabled={isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-slate-300 bg-slate-900 text-white rounded-xl hover:bg-slate-700 disabled:opacity-50 transition-colors cursor-pointer"
-            title="Set every row to absent (-1)"
-          >
-            <UserX size={12} />
-            Mark All Absent
           </button>
         )}
       </div>
@@ -372,6 +367,20 @@ export default function ResultsTraitsGridView({
               ? "No changes yet."
               : `${touched.size} row${touched.size === 1 ? "" : "s"} edited.`}
           </span>
+          {/* Bulk-set tool — icon-only so it sits alongside the terminal
+              actions without adding visual weight. Placed immediately
+              before Cancel so the destructive/bulk gesture is one hop
+              away from the terminal Cancel + Save pair. */}
+          <button
+            type="button"
+            onClick={handleMarkAllAbsent}
+            disabled={isPending}
+            title="Set every row to absent (-1)"
+            aria-label="Mark all rows absent"
+            className="flex items-center justify-center p-2 border border-slate-300 bg-slate-900 text-white rounded-xl hover:bg-slate-700 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            <UserX size={14} />
+          </button>
           <button
             type="button"
             onClick={handleCancel}
@@ -445,9 +454,9 @@ function TraitRow({
   const liveGrade =
     liveScore === null
       ? {
-          symbol: null as string | null,
+          grade_symbol: null as string | null,
           remark: null as string | null,
-          isAbsent: false,
+          is_absent: false,
         }
       : resolveTraitGrade(gradingFormat, liveScore);
 
@@ -466,7 +475,7 @@ function TraitRow({
             error={error}
             onChange={onChange}
           />
-        ) : existing?.isAbsent ? (
+        ) : existing?.is_absent ? (
           <span className="text-slate-400 text-[10px]">ABS</span>
         ) : existing ? (
           <span className="text-slate-700">
@@ -478,13 +487,13 @@ function TraitRow({
         )}
       </td>
       <td className="px-3 py-3 text-center">
-        {liveGrade.isAbsent ? (
+        {liveGrade.is_absent ? (
           <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 rounded-md">
             ABS
           </span>
-        ) : liveGrade.symbol ? (
+        ) : liveGrade.grade_symbol ? (
           <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-md">
-            {liveGrade.symbol}
+            {liveGrade.grade_symbol}
           </span>
         ) : (
           <span className="text-slate-300">—</span>
@@ -523,9 +532,9 @@ function TraitCard({
   const liveGrade =
     liveScore === null
       ? {
-          symbol: null as string | null,
+          grade_symbol: null as string | null,
           remark: null as string | null,
-          isAbsent: false,
+          is_absent: false,
         }
       : resolveTraitGrade(gradingFormat, liveScore);
 
@@ -537,13 +546,13 @@ function TraitCard({
         <span className="text-xs font-semibold text-slate-800 truncate min-w-0">
           {traitLabel(trait)}
         </span>
-        {liveGrade.isAbsent ? (
+        {liveGrade.is_absent ? (
           <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-white text-slate-500 border border-slate-200 rounded-md">
             ABS
           </span>
-        ) : liveGrade.symbol ? (
+        ) : liveGrade.grade_symbol ? (
           <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-white text-slate-700 border border-slate-200 rounded-md">
-            {liveGrade.symbol}
+            {liveGrade.grade_symbol}
           </span>
         ) : null}
       </div>
@@ -563,7 +572,7 @@ function TraitCard({
             error={error}
             onChange={onChange}
           />
-        ) : existing?.isAbsent ? (
+        ) : existing?.is_absent ? (
           <span className="text-slate-400 text-[10px]">ABS</span>
         ) : existing ? (
           <span className="text-slate-800 tabular-nums">{existing.score}</span>
