@@ -16,6 +16,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { ArmDetailsProvider } from "./context/Armdetailsprovider";
 import ArmInfo from "./components/Arminfo";
 import ArmTabArea from "./components/Armtabarea";
@@ -47,21 +49,45 @@ export default async function ArmDetailPage({ searchParams }: ArmPageProps) {
   // direct URL visit or a bookmark from before id was wired.
   if (!id) {
     return (
-      <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6 text-amber-900 text-sm">
-        <p className="font-semibold mb-1">Missing arm identifier</p>
-        <p className="text-xs">
-          Open this page from the class arms list, or include
-          <code className="mx-1 px-1 bg-white rounded">?id=&lt;arm-id&gt;</code>
-          in the URL.
-        </p>
+      <div className="space-y-6">
+        <Link
+          href="/dashboard/arms"
+          className="inline-flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-700"
+        >
+          <ArrowLeft size={12} />
+          Back to class list
+        </Link>
+
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6 text-amber-900 text-sm">
+          <p className="font-semibold mb-1">Missing arm identifier</p>
+          <p className="text-xs">
+            Open this page from the class arms list, or include
+            <code className="mx-1 px-1 bg-white rounded">
+              ?id=&lt;arm-id&gt;
+            </code>
+            in the URL.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <ArmDetailsProvider armId={id}>
-      <ArmInfo />
-      <ArmTabArea />
-    </ArmDetailsProvider>
+    <div className="space-y-6">
+      {/* Back-to-list anchor so the user can navigate up without using the
+          browser's back button. */}
+      <Link
+        href="/dashboard/arms"
+        className="inline-flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-700"
+      >
+        <ArrowLeft size={12} />
+        Back to class list
+      </Link>
+
+      <ArmDetailsProvider armId={id}>
+        <ArmInfo />
+        <ArmTabArea />
+      </ArmDetailsProvider>
+    </div>
   );
 }

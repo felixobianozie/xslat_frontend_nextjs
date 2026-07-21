@@ -129,6 +129,8 @@ export default function ResultsDetailPane({
         decision={studentResult?.decision}
         populationCount={classResult.student_population}
         gender={studentResult?.student_gender}
+        totalScore={studentResult?.total_score}
+        totalObtainable={studentResult?.total_score_obtainable}
         gradingSummary={studentResult?.grading_summary}
       />
 
@@ -236,6 +238,12 @@ interface SummaryCardProps {
   // or "O" — expanded to Male/Female/Other in the UI. Any other value
   // (or null) renders as-is / "—".
   gender: string | null | undefined;
+  // Student's raw aggregate score (sum of subject totals) and the max
+  // achievable for that student given their subject enrolments. Rendered
+  // together as "score / obtainable" — the same "value of context" style
+  // as the Position stat. Both come from the compute payload.
+  totalScore: number | undefined;
+  totalObtainable: number | undefined;
   // Distribution of subject grade prefixes for this student — e.g.
   // { A: 3, B: 4, C: 2 }. The backend seeds every prefix from the arm's
   // grading format (so zero-count entries CAN appear in the map), but only
@@ -251,6 +259,8 @@ function SummaryCard({
   decision,
   populationCount,
   gender,
+  totalScore,
+  totalObtainable,
   gradingSummary,
 }: SummaryCardProps) {
   // Grade distribution — only the bands the student actually earned.
@@ -264,6 +274,7 @@ function SummaryCard({
     : [];
 
   const hasGradingSummary = gradeEntries.length > 0;
+  const hasTotal = totalScore !== undefined;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -295,15 +306,31 @@ function SummaryCard({
         />
       </div>
 
-      {/* Secondary row — gender + grade distribution. Hidden entirely when
-          neither field has data (e.g. student not in the compute payload). */}
-      {(gender || hasGradingSummary) && (
+      {/* Secondary row — gender + total + grade distribution. Hidden entirely
+          when none of the three fields have data (e.g. student not in the
+          compute payload). */}
+      {(gender || hasTotal || hasGradingSummary) && (
         <div className="flex flex-col md:flex-row gap-2.5">
           {gender !== undefined && (
             <Stat
               label="Gender"
               value={formatGender(gender)}
               // Narrow on desktop so it doesn't fight the pills for width.
+              className="md:w-40 md:shrink-0"
+            />
+          )}
+          {hasTotal && (
+            <Stat
+              label="Total"
+              // Include the obtainable when the backend provides it — the
+              // "score / max" format mirrors how Position surfaces its
+              // denominator context. Fall back to just the score if the
+              // obtainable is missing so the card never renders "n / undefined".
+              value={
+                totalObtainable !== undefined
+                  ? `${totalScore} / ${totalObtainable}`
+                  : String(totalScore)
+              }
               className="md:w-40 md:shrink-0"
             />
           )}
