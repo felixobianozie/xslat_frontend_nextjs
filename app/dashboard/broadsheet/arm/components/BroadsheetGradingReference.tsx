@@ -7,12 +7,15 @@
 //   1. The pass-decision rule that applies to the arm.
 //   2. The three grading formats (cognitive, affective, psychomotor).
 //
-// Why bundle the pass rule and grading systems together?
-//   They're both "what do these numbers mean?" context. Keeping them on the
-//   same screen lets the admin sanity-check a borderline result without
-//   leaving the page.
+// Layout note:
+//   The outer 3-card grid (Cog / Aff / Psy) is already responsive
+//   (1 col → 2 col → 3 col). Inside each format card, the individual
+//   grade rows now sit on their own responsive grid (2 col by default,
+//   expanding to 3 col at xl+). Previously the grades stacked one per
+//   line, which read as a long vertical list on desktop even though
+//   most formats define ~6 grades.
 //
-// Pass rule formatting note:
+// Pass rule formatting:
 //   `base_value` comes through as a string from the backend (DRF's
 //   DecimalField serialisation). We `parseFloat` it before rendering so
 //   percentages display as percentages, not as "0.5".
@@ -73,10 +76,6 @@ function PassRule({ rule }: { rule: ArmPassRule | null }) {
     );
   }
 
-  // Compose a human-readable summary of the rule. We branch on the two
-  // dimensions documented in arm.d.ts:
-  //   - type: "score" | "count"  (aggregate score vs. subject pass count)
-  //   - decide_by: "raw" | "percentage"
   const baseValueNumber = parseFloat(rule.base_value);
 
   // The natural-language summary the rule label expands to.
@@ -143,6 +142,11 @@ function PassRule({ rule }: { rule: ArmPassRule | null }) {
 }
 
 // ── Grading format card ──────────────────────────────────────────────────
+// Grade rows sit on a responsive grid inside each card: two columns by
+// default (readable on mobile without stretching), three columns at xl+
+// where the outer 3-card grid still leaves each card ~one-third of the
+// viewport. Individual grade tiles keep the same visual weight as before —
+// the change is purely layout.
 function GradingFormatCard({
   title,
   description,
@@ -162,14 +166,17 @@ function GradingFormatCard({
       </div>
       <div className="p-4">
         {format ? (
-          <ul className="flex flex-col gap-2">
+          <ul className="grid grid-cols-2 xl:grid-cols-3 gap-2">
             {format.grades.map((grade) => (
-              <li key={grade.id} className="flex items-center gap-3 text-xs">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-slate-200 bg-slate-50 text-slate-700 font-semibold text-xs">
+              <li
+                key={grade.id}
+                className="flex items-center gap-2 text-xs min-w-0"
+              >
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-slate-200 bg-slate-50 text-slate-700 font-semibold text-xs shrink-0">
                   {grade.symbol}
                 </span>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-slate-700 font-medium">
+                  <span className="text-slate-700 font-medium truncate">
                     {grade.remark}
                   </span>
                   <span className="text-[10px] text-slate-400 tabular-nums">

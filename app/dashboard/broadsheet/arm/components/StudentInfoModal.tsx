@@ -8,21 +8,47 @@
 //
 //   variant="performance" → student's term performance summary (totals,
 //                            average, position, decision, comments).
-//   variant="access"      → "report card access" info (counts of times
-//                            accessed, last accessed date, cards used).
+//   variant="access"      → pin-issued result-access analytics for this
+//                            student's assessment: total accesses, unique
+//                            pins used, when it was last accessed, and the
+//                            list of pin serials that have bound to it.
 //
-// The "access" variant is purely informational and shows placeholder data —
-// there's no backend endpoint for result access tracking yet. We leave the
-// shape consistent with what a future Term.results_access endpoint would
-// likely look like so swap-in is a small change.
+// The access variant reads from GET pins/stats/assessment/ and handles the
+// three response cases: loading (spinner), no row yet (`data: null` — the
+// assessment has never been accessed via a pin), and populated. The query
+// only fires when the modal is mounted in "access" mode and an
+// assessment_id is available on the passed-in studentResult.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Lock, X, BarChart3 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BarChart3, Lock, X } from "lucide-react";
+
+import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import ButtonLoader from "../../../components/Buttonloader";
+import type { ApiEnvelope } from "../context/BroadsheetDetailsProvider";
 
 // ── Variant union ─────────────────────────────────────────────────────────
 export type StudentInfoVariant = "performance" | "access";
+
+// ── Per-assessment pin usage shape ───────────────────────────────────────
+// Matches the ResultAccessStatSerializer response. The nested `assessment`
+// carries the student + arm (via the include_*_fields context set by the
+// pins view); we don't consume the assessment sub-tree in the UI today,
+// so it's typed loosely as `unknown` to avoid a redundant nested type
+// declaration here.
+interface AssessmentPinUsage {
+  id: string;
+  assessment: unknown;
+  school: { id: string; name: string; abbr?: string };
+  term: { id: string; name: string };
+  session: { id: string; name: string };
+  total_accesses: number;
+  total_unique_pins: number;
+  unique_pins: string[];
+  last_accessed_at: string | null;
+}
 
 interface StudentInfoModalProps {
   variant: StudentInfoVariant;
@@ -36,6 +62,20 @@ interface StudentInfoModalProps {
 // Full name helper — handles the optional middle_name without dangling spaces.
 function fullName(s: ArmStudent): string {
   return [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(" ");
+}
+
+// Format an ISO datetime for display. Returns "—" for null / invalid input.
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 // Variant headers — kept in one place so adding a third variant later is
@@ -87,7 +127,6 @@ export default function StudentInfoModal({
       aria-modal="true"
       aria-labelledby="student-info-modal-title"
     >
-      {/* Backdrop */}
       <button
         type="button"
         aria-label="Close dialog"
@@ -95,7 +134,6 @@ export default function StudentInfoModal({
         className="cursor-pointer absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
       />
 
-      {/* Card — always centred, with edge padding from the outer wrapper. */}
       <div className="relative w-full sm:max-w-md bg-white rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
@@ -150,7 +188,7 @@ export default function StudentInfoModal({
               classSize={classSize}
             />
           ) : (
-            <AccessBody />
+            <AccessBody assessmentId={studentResult?.assessment_id ?? null} />
           )}
         </div>
 
@@ -188,7 +226,6 @@ function PerformanceBody({
     );
   }
 
-  // Sum per-subject totals once so we don't repeat the reduce below.
   const totalObtained = Object.values(studentResult.subjects).reduce(
     (sum, s) => sum + s.total,
     0,
@@ -243,18 +280,115 @@ function PerformanceBody({
   );
 }
 
-// ── Access body — placeholder, no backend endpoint yet ────────────────────
-function AccessBody() {
+// ── Access body — real pin usage fetch ───────────────────────────────────
+// Fires once the modal mounts in access mode (this component is only
+// rendered when variant === "access"). Handles three response states:
+//   1. loading  → centred ButtonLoader in the section body
+//   2. null     → "not yet accessed" message (endpoint returned data:null)
+//   3. present  → total accesses / unique pins / last accessed + the
+//                 list of pin serials that have bound to this assessment.
+function AccessBody({ assessmentId }: { assessmentId: string | null }) {
+  const { clientAuthFetch } = useClientAuthFetch();
+
+  const { data, isPending, isError, error } = useQuery<
+    ApiEnvelope<AssessmentPinUsage | null>
+  >({
+    queryKey: ["assessment-pin-usage", assessmentId],
+    queryFn: async () => {
+      const url = `pins/stats/assessment/?assessment-id=${assessmentId}`;
+      const { data, error } =
+        await clientAuthFetch<ApiEnvelope<AssessmentPinUsage | null>>(url);
+      if (error) throw new Error(error.message);
+      return data!;
+    },
+    enabled: !!assessmentId,
+    refetchOnWindowFocus: false,
+  });
+
+  // No assessment_id at all — usually means the compute endpoint hasn't
+  // produced a row for this student yet, so pin analytics can't be looked
+  // up. Surface a friendly line rather than a spinner that never ends.
+  if (!assessmentId) {
+    return (
+      <Section title="Access Records">
+        <div className="px-3 py-2 text-xs text-slate-500 italic">
+          No assessment record available for this student yet — access analytics
+          are not applicable.
+        </div>
+      </Section>
+    );
+  }
+
+  if (isPending) {
+    return (
+      <Section title="Access Records">
+        <div className="flex items-center justify-center gap-2 px-3 py-6">
+          <ButtonLoader />
+          <span className="text-xs text-slate-500">
+            Loading access records…
+          </span>
+        </div>
+      </Section>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Section title="Access Records">
+        <div className="px-3 py-2 text-xs text-red-600">
+          Could not load access records:{" "}
+          {error instanceof Error ? error.message : "unknown error."}
+        </div>
+      </Section>
+    );
+  }
+
+  const stat = data?.data ?? null;
+
+  if (!stat) {
+    // Endpoint returned data:null — this assessment has never been accessed
+    // through a pin. Not an error; just an absence of activity.
+    return (
+      <Section title="Access Records">
+        <Row label="Total Accesses" value={0} />
+        <Row label="Unique Pins Used" value={0} />
+        <Row label="Last Accessed" value="—" />
+        <div className="px-3 py-2 text-[11px] text-slate-400 italic">
+          This student&apos;s result has not been accessed via a pin yet.
+        </div>
+      </Section>
+    );
+  }
+
   return (
-    <Section title="Access Records">
-      <p className="text-[11px] text-slate-400 italic mb-2">
-        Result access tracking is not yet available. The values below are
-        placeholders.
-      </p>
-      <Row label="Total Access Count" value={0} />
-      <Row label="Last Accessed On" value="—" />
-      <Row label="Access Cards Issued" value={0} />
-    </Section>
+    <>
+      <Section title="Access Records">
+        <Row label="Total Accesses" value={stat.total_accesses} />
+        <Row label="Unique Pins Used" value={stat.total_unique_pins} />
+        <Row
+          label="Last Accessed"
+          value={formatDateTime(stat.last_accessed_at)}
+        />
+      </Section>
+
+      {/* Pin serials list — only render when there is at least one, and
+          keep it visually compact (the list can grow). Serials are
+          rendered as tiny mono-style chips to look like credentials. */}
+      {stat.unique_pins.length > 0 && (
+        <Section title="Pins Bound to This Assessment">
+          <div className="px-3 py-2 flex flex-wrap gap-1.5">
+            {stat.unique_pins.map((serial) => (
+              <span
+                key={serial}
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-mono border border-slate-200"
+              >
+                {serial}
+              </span>
+            ))}
+          </div>
+        </Section>
+      )}
+    </>
   );
 }
 

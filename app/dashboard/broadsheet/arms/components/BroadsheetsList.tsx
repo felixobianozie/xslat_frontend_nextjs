@@ -8,19 +8,30 @@
 // (View / Approve / Revoke), plus the term-level Publish Results action.
 //
 // Layout:
-//   - Toolbar with search + section filter + Publish Results button.
-//   - Term-level progress strip showing how many arms in the term are
-//     approved. Publishing is a manual action via the toolbar button;
-//     the strip just surfaces approval readiness.
+//   - Session / Term filter row (placeholder — see note below).
+//   - Term-level progress strip showing how many arms in the term are approved.
+//   - Toolbar with search + Publish Results button.
 //   - Desktop: table.   Mobile: stacked cards.
 //
 // Data layer:
-//   - Single useQuery against the mock helper. Result shape mirrors what the
-//     real GET arm/list/ envelope would return, so swapping to clientAuthFetch
-//     is a one-line change inside queryFn.
-//   - Filtering and search are purely client-side: the real backend list
-//     endpoint doesn't expose a broadsheet-status filter or a full-text
-//     search param, so doing this in the client matches its behaviour.
+//   - useQuery is the single source of truth. queryFn calls the real backend
+//     GET arm/list/?school-id=…&term-id=… via clientAuthFetch.
+//   - initialArms (from the server component) is handed to React Query as
+//     initialData so there is no loading flash on first paint.
+//   - The query key is ["broadsheet-arms", SCHOOL_ID, currentTerm.id] so that
+//     switching term (once the placeholder filter becomes real) doesn't
+//     stale-serve the previous term's arms. BroadsheetAdminActionModal
+//     invalidates the broad ["broadsheet-arms"] prefix, which still matches.
+//   - Text search is purely client-side: the backend list endpoint doesn't
+//     expose a full-text search param.
+//
+// Session / Term filter (placeholder):
+//   - The two chips at the top display the school's CURRENT session and CURRENT
+//     term names (resolved server-side and passed in via props).
+//   - Clicking either fires a "feature in the works" toast — actual switching
+//     between sessions/terms is not wired yet. Once the backend exposes list
+//     endpoints for prior sessions/terms, the chips become real dropdowns and
+//     the query key already picks up the new term-id automatically.
 //
 // Actions:
 //   - View   → navigates to /dashboard/broadsheet/arm?id=<armId>.
@@ -29,12 +40,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Filter, Globe, Search } from "lucide-react";
+import {
+  CalendarClock,
+  CalendarRange,
+  ChevronDown,
+  Globe,
+  Search,
+} from "lucide-react";
 import { toast } from "react-toastify";
 
+import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import EmptyState from "../../../components/Emptystate";
 import TableLoader from "../../../components/Tableloader";
 import BroadsheetStatusBadge from "./BroadsheetStatusBadge";
@@ -43,10 +61,15 @@ import BroadsheetAdminActionModal, {
   type BroadsheetAdminAction,
 } from "./BroadsheetAdminActionModal";
 import BroadsheetPublishModal from "./BroadsheetPublishModal";
-import { fetchBroadsheetArms, type ApiEnvelope } from "../broadsheet-mock-data";
+import type { ApiEnvelope, CurrentTerm } from "../page";
 
-// ── Filter type — section abbreviation, or "all" for no filter ───────────────
-type SectionFilter = "all" | `section:${string}`;
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
+
+// Shown when the user taps the placeholder session/term chips. Kept centralised
+// so the wording stays consistent if/when other placeholders appear.
+const FEATURE_IN_WORKS = "This feature is still in the works.";
 
 // "JSS 1 A" — full identifier used in row labels and dialogs.
 function formatArm(arm: ClassArm): string {
@@ -59,13 +82,25 @@ interface PendingAdminAction {
   arm: ClassArm;
 }
 
-export default function BroadsheetsList() {
+// ── Props ────────────────────────────────────────────────────────────────────
+
+interface BroadsheetsListProps {
+  /** School's current term chain, resolved server-side. Drives both the
+   *  scoping of the arms query and the labels on the placeholder filter chips. */
+  currentTerm: CurrentTerm;
+  /** Pre-fetched arms envelope, used as React Query initialData. */
+  initialArms: ApiEnvelope<ClassArm[]> | null;
+}
+
+export default function BroadsheetsList({
+  currentTerm,
+  initialArms,
+}: BroadsheetsListProps) {
   const router = useRouter();
+  const { clientAuthFetch } = useClientAuthFetch();
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<SectionFilter>("all");
-  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
 
   // When set, BroadsheetAdminActionModal renders for this arm + action.
   const [pendingAction, setPendingAction] = useState<PendingAdminAction | null>(
@@ -76,33 +111,30 @@ export default function BroadsheetsList() {
   // per-arm action modal so they can never collide.
   const [publishModalOpen, setPublishModalOpen] = useState(false);
 
-  const filterDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close the filter dropdown when the user clicks anywhere outside it.
-  useEffect(() => {
-    function handleOutside(e: MouseEvent) {
-      if (
-        filterDropdownRef.current &&
-        !filterDropdownRef.current.contains(e.target as Node)
-      ) {
-        setFilterDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, []);
-
   // ── React Query: arms list ────────────────────────────────────────────────
-  // MOCK: queryFn calls fetchBroadsheetArms(). To wire to the real backend,
-  // replace with clientAuthFetch("arm/list/?school-id=…&term-id=…").
+  // The query key includes currentTerm.id so once the session/term filter is
+  // wired, changing the term picks up a fresh query without cross-contaminating
+  // the currently-cached term's rows.
   const { data, isPending, isError, error } = useQuery<ApiEnvelope<ClassArm[]>>(
     {
-      queryKey: ["broadsheet-arms"],
+      queryKey: ["broadsheet-arms", SCHOOL_ID, currentTerm.id],
+
       queryFn: async () => {
-        const { data, error } = await fetchBroadsheetArms();
+        const url = `arm/list/?school-id=${SCHOOL_ID}&term-id=${currentTerm.id}`;
+        const { data, error } =
+          await clientAuthFetch<ApiEnvelope<ClassArm[]>>(url);
+
+        // Throwing marks the query as errored; the toast below surfaces the
+        // message to the user.
         if (error) throw new Error(error.message);
         return data!;
       },
+
+      // Hydrate from the server-fetched envelope so the table renders instantly
+      // on first paint. initialDataUpdatedAt tells React Query the data is
+      // fresh so it doesn't fire an immediate background refetch on mount.
+      initialData: initialArms ?? undefined,
+      initialDataUpdatedAt: initialArms ? Date.now() : undefined,
     },
   );
 
@@ -119,35 +151,22 @@ export default function BroadsheetsList() {
 
   const arms: ClassArm[] = data?.data ?? [];
 
-  // Unique sections present in the result set — drives the filter dropdown.
-  const sectionOptions = useMemo(() => {
-    const abbrs = new Set(arms.map((a) => a.level.section.abbr));
-    return Array.from(abbrs).sort();
-  }, [arms]);
-
-  // Apply section filter, then search.
+  // Apply text search. No other narrowing filters remain in this toolbar.
   const visibleArms = useMemo(() => {
-    let filtered = arms;
-
-    if (activeFilter !== "all") {
-      const wanted = activeFilter.slice("section:".length);
-      filtered = filtered.filter((a) => a.level.section.abbr === wanted);
-    }
-
     const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter(
-        (a) =>
-          a.name.toLowerCase().includes(q) ||
-          a.abbr.toLowerCase().includes(q) ||
-          formatArm(a).toLowerCase().includes(q),
-      );
-    }
-
-    return filtered;
-  }, [arms, activeFilter, searchQuery]);
+    if (!q) return arms;
+    return arms.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.abbr.toLowerCase().includes(q) ||
+        formatArm(a).toLowerCase().includes(q),
+    );
+  }, [arms, searchQuery]);
 
   // Term progress stats — drives the strip above the table.
+  // arm.broadsheet may be absent from a row's payload; treat that the same
+  // as "none" (per the backend's Arm.broadsheet default), which is what the
+  // downstream badge / action-menu components already fall back to.
   const termStats = useMemo(() => {
     const total = arms.length;
     const approved = arms.filter((a) => a.broadsheet === "approved").length;
@@ -159,11 +178,6 @@ export default function BroadsheetsList() {
   }, [arms]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-
-  function handleFilterChange(filter: SectionFilter) {
-    setActiveFilter(filter);
-    setFilterDropdownOpen(false);
-  }
 
   function handleView(arm: ClassArm) {
     router.push(`/dashboard/broadsheet/arm?id=${arm.id}`);
@@ -177,14 +191,34 @@ export default function BroadsheetsList() {
     setPendingAction({ action: "revoke", arm });
   }
 
-  // Filter-button label — "All Sections" by default, otherwise the chosen one.
-  const activeFilterLabel =
-    activeFilter === "all"
-      ? "All Sections"
-      : `Section: ${activeFilter.slice("section:".length)}`;
+  // Session/term placeholder chips share one handler — swapping between the
+  // two is not wired yet, so both tell the user the same thing.
+  function handlePlaceholderFilter() {
+    toast.info(FEATURE_IN_WORKS);
+  }
 
   return (
     <>
+      {/* ── Session / Term placeholder filter row ───────────────────────────
+          Two chips displaying the current session and current term names.
+          Clicking either fires a "feature in the works" toast for now; once
+          the backend exposes prior-session/term listings these become real
+          dropdowns and the query key already handles the switchover. */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <PlaceholderFilterChip
+          Icon={CalendarRange}
+          label="Session"
+          value={currentTerm.session.name}
+          onClick={handlePlaceholderFilter}
+        />
+        <PlaceholderFilterChip
+          Icon={CalendarClock}
+          label="Term"
+          value={currentTerm.name}
+          onClick={handlePlaceholderFilter}
+        />
+      </div>
+
       {/* ── Term-level progress strip ───────────────────────────────────────
           Shows how the term's broadsheet approvals are progressing so the
           admin knows whether the term is ready for publishing. Publishing
@@ -197,7 +231,8 @@ export default function BroadsheetsList() {
         isPending={isPending}
       />
 
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      {/* ── Toolbar ─ Search + Publish ─────────────────────────────────────
+          Search stacks above Publish on mobile and sits inline on sm+. */}
       <div className="flex flex-col sm:flex-row gap-2 mb-6">
         {/* Search */}
         <div className="relative flex-1">
@@ -214,59 +249,20 @@ export default function BroadsheetsList() {
           />
         </div>
 
-        {/* Filter + Publish cluster — keeps the two trailing controls on the
-            same row on mobile (each takes half) and inline on sm+. */}
-        <div className="flex gap-2">
-          {/* Section filter — the only backend-aligned dimension worth
-              exposing here. Broadsheet status is shown per row, so filtering
-              by it would mostly hide rows the admin actively needs to act on. */}
-          <div ref={filterDropdownRef} className="relative flex-1 sm:flex-none">
-            <button
-              onClick={() => setFilterDropdownOpen((open) => !open)}
-              className={`cursor-pointer flex w-full items-center justify-center sm:justify-start gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
-                activeFilter !== "all"
-                  ? "border-violet-400 bg-violet-50 text-violet-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
-              }`}
-            >
-              <Filter size={12} />
-              <span className="hidden sm:inline">{activeFilterLabel}</span>
-              <span className="sm:hidden">Filter</span>
-            </button>
-
-            {filterDropdownOpen && (
-              <div className="absolute top-10 right-0 sm:left-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-48 py-1">
-                <FilterOptionButton
-                  label="All Sections"
-                  active={activeFilter === "all"}
-                  onClick={() => handleFilterChange("all")}
-                />
-                {sectionOptions.map((abbr) => (
-                  <FilterOptionButton
-                    key={abbr}
-                    label={`Section: ${abbr}`}
-                    active={activeFilter === `section:${abbr}`}
-                    onClick={() => handleFilterChange(`section:${abbr}`)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Publish Term Results — opens BroadsheetPublishModal. Always
-              enabled; the modal explains the action and the backend will
-              ultimately enforce its own preconditions. */}
-          <button
-            type="button"
-            onClick={() => setPublishModalOpen(true)}
-            className="cursor-pointer flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-sm shadow-violet-200 transition-colors whitespace-nowrap"
-            aria-label="Publish term results"
-          >
-            <Globe size={12} />
-            <span className="hidden sm:inline">Publish Results</span>
-            <span className="sm:hidden">Publish</span>
-          </button>
-        </div>
+        {/* Publish Term Results — opens BroadsheetPublishModal. Always
+            enabled; the modal explains the action and the backend will
+            ultimately enforce its own preconditions. Full-width on mobile
+            to match the search input above it; content-sized on sm+. */}
+        <button
+          type="button"
+          onClick={() => setPublishModalOpen(true)}
+          className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-sm shadow-violet-200 transition-colors whitespace-nowrap"
+          aria-label="Publish term results"
+        >
+          <Globe size={12} />
+          <span className="hidden sm:inline">Publish Results</span>
+          <span className="sm:hidden">Publish</span>
+        </button>
       </div>
 
       {/* ── List body ───────────────────────────────────────────────────── */}
@@ -428,6 +424,35 @@ export default function BroadsheetsList() {
   );
 }
 
+// ── PlaceholderFilterChip ────────────────────────────────────────────────────
+// Chip-style button used for the session/term placeholder filters. Visually
+// consistent with the section filter chip so the user reads them as the same
+// kind of control; the parent's `onClick` today just fires a toast.
+function PlaceholderFilterChip({
+  Icon,
+  label,
+  value,
+  onClick,
+}: {
+  Icon: typeof CalendarRange;
+  label: string;
+  value: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="cursor-pointer flex flex-1 items-center gap-2 px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl hover:border-violet-300 transition-colors"
+    >
+      <Icon size={13} className="text-slate-400 shrink-0" />
+      <span className="text-slate-400 shrink-0">{label}:</span>
+      <span className="font-medium text-slate-700 truncate">{value}</span>
+      <ChevronDown size={12} className="text-slate-400 ml-auto shrink-0" />
+    </button>
+  );
+}
+
 // ── TermProgressStrip ─────────────────────────────────────────────────────────
 // Compact info strip that summarises how far through the term's broadsheet
 // approvals the admin is. Publishing the term results is now a manual,
@@ -521,30 +546,5 @@ function TermProgressStrip({
         />
       </div>
     </div>
-  );
-}
-
-// ── FilterOptionButton ───────────────────────────────────────────────────────
-// Single dropdown item — extracted so the filter list reads cleanly above.
-function FilterOptionButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`cursor-pointer w-full text-left px-4 py-2 text-xs transition-colors ${
-        active
-          ? "bg-violet-50 text-violet-700 font-semibold"
-          : "text-slate-600 hover:bg-slate-50"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

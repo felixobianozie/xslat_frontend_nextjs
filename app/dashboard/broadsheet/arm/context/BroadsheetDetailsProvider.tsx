@@ -5,41 +5,85 @@
 //
 // Provides every component on the /dashboard/broadsheet/arm page with the
 // data it needs — the arm record itself, the student roster, the subjects
-// list, and the computed class assessment aggregates. All children read
-// the value via the `useBroadsheetDetails` hook (exported from this same
-// file).
+// list, the computed class assessment aggregates, and the school/term/session
+// pin-usage rollup. All children read the value via the `useBroadsheetDetails`
+// hook (exported from this same file).
 //
-// Why one provider for everything?
-//   The broadsheet detail page has three sibling tables (Cognitive,
-//   Affective, Psychomotor) and a couple of modals. Each of them needs the
-//   same underlying data (arm, students, subjects, aggregates). Putting it
-//   in a single provider keeps the data-loading logic in one place and
-//   avoids prop drilling through six layers of components.
+// Data layer:
+//   Five React Query queries hit the real backend via clientAuthFetch:
+//     1. GET arm/detail/?id=<armId>&school-id=…              → the arm record
+//     2. GET student/list/?school-id=…&arm-id=<armId>&…      → the roster
+//     3. GET subject/list/?school-id=…&term-id=…&arm=<armId> → subjects offered
+//     4. GET arm/assessment/compute/?school-id=…&arm-id=…    → class aggregates
+//     5. GET pins/stats/school/?school-id=…&term-id=…&…      → pin usage rollup
 //
-// Where the aggregates come from:
-//   The class-level result (per-student totals, grades, positions, decisions,
-//   plus class average) is fetched as a separate query — it comes from the
-//   arm/assessment/compute/ endpoint on the real backend. On the mock the
-//   same shape is produced by `fetchBroadsheetClassResult`, which shares the
-//   seed data with the raw arm.assessments returned above.
+//   Queries (1), (2), and (4) fire in parallel — armId is available on mount.
+//   Queries (3) and (5) are chained: (3) needs term-id, (5) needs term-id +
+//   session-id — both live on arm.level.section.term chain and can't resolve
+//   until (1) lands.
 //
-// MOCK: every queryFn calls a local broadsheet-detail-mock-data helper. To
-// wire this page to the real backend, replace each helper with the matching
-// clientAuthFetch call shown in the comment above it.
+// Secondary loading flags are exported so views can distinguish between
+// "the arm is loaded, keep showing the page" (isPending=false) and "the
+// arm is loaded but the query I depend on is still in flight" — which
+// previously caused a fraction-of-a-second empty-state flash in the three
+// broadsheet tables.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createContext, ReactNode, useContext, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 
-import {
-  fetchBroadsheetArmDetail,
-  fetchBroadsheetClassResult,
-  fetchBroadsheetStudents,
-  fetchBroadsheetSubjects,
-} from "../broadsheet-detail-mock-data";
+import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 
-// ── Context value ─────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
+
+// Backend paginates student/list/ in chunks (default 10, max 100). Request
+// the max so a single fetch usually covers the class in one round-trip.
+const STUDENTS_PAGE_SIZE = 100;
+
+// ── Envelope types ───────────────────────────────────────────────────────────
+
+export interface ApiEnvelope<T> {
+  message: string;
+  data: T;
+}
+
+export interface PaginatedResponse<T> {
+  message: string;
+  count: number;
+  total_pages: number;
+  current_page: number;
+  next: string | null;
+  previous: string | null;
+  data: T[];
+}
+
+// ── Pin-usage rollup type ────────────────────────────────────────────────────
+// Shape returned by GET pins/stats/school/ when the SchoolTermResultStat row
+// exists. The nested school/term/session objects are limited to id + basic
+// display fields via the include_*_fields context set by the view.
+//
+// The endpoint returns `data: null` when no pin activity has been recorded
+// for the (school, term, session) triple yet, so the provider treats the
+// stat as nullable throughout.
+
+export interface SchoolTermResultStat {
+  id: string;
+  school: { id: string; name: string; abbr?: string };
+  term: { id: string; name: string };
+  session: { id: string; name: string };
+  total_unique_pins: number;
+  total_accesses: number;
+  assessments_accessed: number;
+  last_accessed_at: string | null;
+}
+
+// ── Context value ────────────────────────────────────────────────────────────
+// Additive-only from the previous version: same fields as before, plus the
+// three secondary-pending flags and the schoolAccessStat pair. Existing
+// consumers keep working without modification.
 
 export interface BroadsheetDetailsContextValue {
   armId: string;
@@ -47,13 +91,28 @@ export interface BroadsheetDetailsContextValue {
   students: ArmStudent[];
   subjects: ArmSubject[];
   classResult: ClassAssessmentResult;
+
+  // School/term/session pin-usage rollup for this arm's term chain. `null`
+  // either while the query is still pending or when no pin activity has
+  // been recorded yet (the endpoint's "no row" case).
+  schoolAccessStat: SchoolTermResultStat | null;
+
+  // Top-level page loading — driven by the arm query specifically. Kept as
+  // the primary "should the page show a table skeleton" signal.
   isPending: boolean;
   isError: boolean;
   error: unknown;
+
+  // Per-secondary-query pending flags. Views use these to gate empty-state
+  // rendering — otherwise, once the arm loads (isPending=false) but a
+  // secondary query is still in flight, the view flashes its empty state
+  // for a fraction of a second before real data arrives.
+  studentsPending: boolean;
+  subjectsPending: boolean;
+  classResultPending: boolean;
+  schoolAccessStatPending: boolean;
 }
 
-// Kept internal to this file: consumers should read it through the
-// `useBroadsheetDetails` hook below, never the context directly.
 const BroadsheetDetailsContext =
   createContext<BroadsheetDetailsContextValue | null>(null);
 
@@ -66,32 +125,41 @@ export function BroadsheetDetailsProvider({
   armId,
   children,
 }: BroadsheetDetailsProviderProps) {
+  const { clientAuthFetch } = useClientAuthFetch();
+
   // ── Query 1: arm detail ─────────────────────────────────────────────────
-  // MOCK: fetchBroadsheetArmDetail. Real call:
-  //   clientAuthFetch(`arm/detail/?id=${armId}&school-id=${SCHOOL_ID}`)
   const {
     data: armData,
     isPending: armPending,
     isError: armIsError,
     error: armError,
-  } = useQuery({
+  } = useQuery<ApiEnvelope<ClassArm>>({
     queryKey: ["broadsheet-arm-detail", armId],
     queryFn: async () => {
-      const { data, error } = await fetchBroadsheetArmDetail(armId);
+      const url = `arm/detail/?id=${armId}&school-id=${SCHOOL_ID}`;
+      const { data, error } = await clientAuthFetch<ApiEnvelope<ClassArm>>(url);
       if (error) throw new Error(error.message);
       return data!;
     },
     enabled: !!armId,
     refetchOnWindowFocus: false,
   });
+
+  // Term + session are both needed by chained queries (subjects, school stat).
+  // Empty strings when the arm hasn't loaded yet keep the enabled gates simple.
+  const arm = armData?.data ?? null;
+  const termId = arm?.level.section.term?.id ?? "";
+  const sessionId = arm?.level.section.term?.session?.id ?? "";
 
   // ── Query 2: student roster ─────────────────────────────────────────────
-  // MOCK: fetchBroadsheetStudents. Real call:
-  //   clientAuthFetch(`student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}&page-size=100`)
-  const { data: studentsData, isPending: studentsPending } = useQuery({
+  const { data: studentsData, isPending: studentsPending } = useQuery<
+    PaginatedResponse<ArmStudent>
+  >({
     queryKey: ["broadsheet-students", armId],
     queryFn: async () => {
-      const { data, error } = await fetchBroadsheetStudents(armId);
+      const url = `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}&page-size=${STUDENTS_PAGE_SIZE}`;
+      const { data, error } =
+        await clientAuthFetch<PaginatedResponse<ArmStudent>>(url);
       if (error) throw new Error(error.message);
       return data!;
     },
@@ -99,30 +167,34 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
-  // ── Query 3: subjects ───────────────────────────────────────────────────
-  // MOCK: fetchBroadsheetSubjects. Real call:
-  //   clientAuthFetch(`subject/list/?school-id=${SCHOOL_ID}&term-id=${termId}&arm=${armId}`)
-  const { data: subjectsData, isPending: subjectsPending } = useQuery({
+  // ── Query 3: subjects offered by the arm ────────────────────────────────
+  const { data: subjectsData, isPending: subjectsPending } = useQuery<
+    ApiEnvelope<ArmSubject[]>
+  >({
     queryKey: ["broadsheet-subjects", armId],
     queryFn: async () => {
-      const { data, error } = await fetchBroadsheetSubjects(armId);
+      const url =
+        `subject/list/?school-id=${SCHOOL_ID}` +
+        `&term-id=${termId}` +
+        `&arm=${armId}`;
+      const { data, error } =
+        await clientAuthFetch<ApiEnvelope<ArmSubject[]>>(url);
       if (error) throw new Error(error.message);
       return data!;
     },
-    enabled: !!armId,
+    enabled: !!armId && !!termId,
     refetchOnWindowFocus: false,
   });
 
   // ── Query 4: class assessment result ────────────────────────────────────
-  // MOCK: fetchBroadsheetClassResult. Real call:
-  //   clientAuthFetch(`arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`)
-  // This replaces the old client-side computeClassAssessment memo — the
-  // real backend now derives the whole class result server-side and returns
-  // it as the compute-endpoint payload.
-  const { data: classResultData, isPending: classResultPending } = useQuery({
+  const { data: classResultData, isPending: classResultPending } = useQuery<
+    ApiEnvelope<ClassAssessmentResult>
+  >({
     queryKey: ["broadsheet-class-result", armId],
     queryFn: async () => {
-      const { data, error } = await fetchBroadsheetClassResult(armId);
+      const url = `arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`;
+      const { data, error } =
+        await clientAuthFetch<ApiEnvelope<ClassAssessmentResult>>(url);
       if (error) throw new Error(error.message);
       return data!;
     },
@@ -130,9 +202,29 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
-  // Surface the arm-fetch error to the user via toast. We watch just the arm
-  // query here because it's the gating one — without an arm record, the
-  // rest of the page can't render anything meaningful.
+  // ── Query 5: school/term/session pin usage rollup ───────────────────────
+  // Chained on term + session (both derived from the arm chain). The endpoint
+  // returns `data: null` when no pin activity has been recorded yet — that's
+  // a valid response, not an error, so we don't throw on it.
+  const { data: schoolAccessStatData, isPending: schoolAccessStatPending } =
+    useQuery<ApiEnvelope<SchoolTermResultStat | null>>({
+      queryKey: ["broadsheet-school-access-stat", SCHOOL_ID, termId, sessionId],
+      queryFn: async () => {
+        const url =
+          `pins/stats/school/?school-id=${SCHOOL_ID}` +
+          `&term-id=${termId}` +
+          `&session-id=${sessionId}`;
+        const { data, error } =
+          await clientAuthFetch<ApiEnvelope<SchoolTermResultStat | null>>(url);
+        if (error) throw new Error(error.message);
+        return data!;
+      },
+      enabled: !!termId && !!sessionId,
+      refetchOnWindowFocus: false,
+    });
+
+  // Surface only the arm error to the user — the other queries silently fall
+  // back to empty/null shapes, which downstream views handle gracefully.
   useEffect(() => {
     if (armIsError && armError) {
       toast.error(
@@ -144,23 +236,20 @@ export function BroadsheetDetailsProvider({
   }, [armIsError, armError]);
 
   // ── Derived values ─────────────────────────────────────────────────────
-  const arm = armData?.data ?? null;
   const students = studentsData?.data ?? [];
   const subjects = subjectsData?.data ?? [];
+  const schoolAccessStat = schoolAccessStatData?.data ?? null;
 
   // Fallback keeps downstream consumers strictly-typed as ClassAssessmentResult
-  // while the query is pending or errored (rare on the mock; matters when this
-  // page eventually goes live). Downstream views handle empty student maps.
+  // while the query is pending or errored.
   const classResult: ClassAssessmentResult = classResultData?.data ?? {
     class_average: 0,
     student_population: 0,
     students: {},
   };
 
-  // We consider the page "pending" only while the arm query is still in
-  // flight. Students and subjects loading slightly later just means a few
-  // cells display "—" briefly — much better than blocking the entire page
-  // until all three resolve.
+  // Top-level pending — arm-fetch only. Views use the more granular flags
+  // below when they need to distinguish their specific dependencies.
   const isPending = armPending;
 
   const value: BroadsheetDetailsContextValue = {
@@ -169,18 +258,15 @@ export function BroadsheetDetailsProvider({
     students,
     subjects,
     classResult,
+    schoolAccessStat,
     isPending,
     isError: armIsError,
     error: armError,
+    studentsPending,
+    subjectsPending,
+    classResultPending,
+    schoolAccessStatPending,
   };
-
-  // Briefly note when secondary queries are still loading — useful for
-  // child components that want to show a more nuanced loading state.
-  // (We don't return these in the context value because no consumer uses
-  //  them yet; they're kept commented as a note for future enhancement.)
-  void studentsPending;
-  void subjectsPending;
-  void classResultPending;
 
   return (
     <BroadsheetDetailsContext.Provider value={value}>
@@ -190,9 +276,7 @@ export function BroadsheetDetailsProvider({
 }
 
 // ── Consumer hook ─────────────────────────────────────────────────────────
-// Throws when used outside the provider so the failure mode is loud at
-// development time rather than a silent null at runtime. This is the
-// SAME pattern as useArmDetails in ArmDetailsProvider.
+
 export function useBroadsheetDetails(): BroadsheetDetailsContextValue {
   const ctx = useContext(BroadsheetDetailsContext);
   if (!ctx) {
@@ -203,6 +287,4 @@ export function useBroadsheetDetails(): BroadsheetDetailsContextValue {
   return ctx;
 }
 
-// Default export kept for parity with the original draft so any consumer
-// that does `import BroadsheetDetailsContext from "…"` continues to compile.
 export default BroadsheetDetailsContext;

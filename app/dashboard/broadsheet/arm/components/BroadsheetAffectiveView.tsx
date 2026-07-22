@@ -9,12 +9,25 @@
 //
 // Per the AffectiveAssessmentBehaviour serializer in users/serializers.py,
 // the label sits on `behaviour` (not `name`). We display that string in the
-// rotated subject-style header.
+// rotated column header.
+//
+// Rotated headers: rotation lives on an inner `<span className="inline-
+// block …">`, not on the `<th>`. Without the inner wrapper, Safari renders
+// `writing-mode: vertical-rl` + `rotate(180deg)` combinations with the
+// glyphs upside down; wrapping the text in an inline-block gives the
+// transform a stable origin that renders identically in Chromium and Safari.
+//
+// Loading gate: shows a TableLoader while students / classResult queries
+// are still in flight (subjects isn't consumed here, but behaviours come
+// from the arm's own affective_assessment_format so the arm-loaded check
+// suffices for the column set). Prevents the "No students in this arm"
+// flash from firing before the roster query lands.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Fragment, useMemo, useState } from "react";
 
 import EmptyState from "../../../components/Emptystate";
+import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
@@ -31,7 +44,8 @@ interface BroadsheetAffectiveViewProps {
 export default function BroadsheetAffectiveView({
   searchQuery,
 }: BroadsheetAffectiveViewProps) {
-  const { arm, students, classResult } = useBroadsheetDetails();
+  const { arm, students, classResult, studentsPending, classResultPending } =
+    useBroadsheetDetails();
   const [activeModal, setActiveModal] = useState<ActiveModalState | null>(null);
 
   // Behaviours sorted by display_order so the column layout stays stable.
@@ -39,13 +53,6 @@ export default function BroadsheetAffectiveView({
     const list = arm?.affective_assessment_format?.behaviours ?? [];
     return [...list].sort((a, b) => a.display_order - b.display_order);
   }, [arm?.affective_assessment_format]);
-
-  // Maximum possible affective score = sum of every behaviour's max_score.
-  // Drives the "Overall Total" obtainable visible in the summary column.
-  const maxOverallTotal = useMemo(
-    () => behaviours.reduce((sum, b) => sum + b.max_score, 0),
-    [behaviours],
-  );
 
   const visibleStudents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -61,37 +68,31 @@ export default function BroadsheetAffectiveView({
     });
   }, [students, searchQuery]);
 
-  // Per-student affective overall (sum of all behaviour scores) — used
-  // for the "Overall Total" + ranking. Computed here rather than in the
-  // shared aggregator because the academic average there counts cognitive
-  // scores only; behaviour ranking is independent.
-  const affectiveRankings = useMemo(() => {
-    const totals: { studentId: string; total: number }[] = [];
+  // Per-student affective overall (sum of all behaviour scores) — drives
+  // the "Overall Total" column. Position column is no longer shown, so we
+  // no longer compute a ranking here (it wasn't consumed elsewhere).
+  const affectiveTotals = useMemo(() => {
+    const totalsById: Record<string, number> = {};
     for (const student of students) {
       const sr = classResult.students[student.id];
-      if (!sr) {
-        totals.push({ studentId: student.id, total: 0 });
-        continue;
-      }
       let total = 0;
-      for (const traitResult of Object.values(sr.behaviours)) {
-        if (traitResult.score >= 0) total += traitResult.score;
+      if (sr) {
+        for (const traitResult of Object.values(sr.behaviours)) {
+          if (traitResult.score >= 0) total += traitResult.score;
+        }
       }
-      totals.push({ studentId: student.id, total });
+      totalsById[student.id] = total;
     }
-    // Rank by total descending; equal totals share sort-stable order.
-    const sorted = [...totals].sort((a, b) => b.total - a.total);
-    const positions: Record<string, number> = {};
-    sorted.forEach((entry, index) => {
-      positions[entry.studentId] = index + 1;
-    });
-    return {
-      positions,
-      totalsById: Object.fromEntries(totals.map((t) => [t.studentId, t.total])),
-    };
+    return totalsById;
   }, [students, classResult]);
 
   if (!arm) return null;
+
+  // Wait for the queries this view depends on before deciding between the
+  // table and an empty state.
+  if (studentsPending || classResultPending) {
+    return <TableLoader rows={8} className="my-4" />;
+  }
 
   if (behaviours.length === 0) {
     return (
@@ -121,13 +122,7 @@ export default function BroadsheetAffectiveView({
     <>
       <div className="overflow-auto max-h-[80vh] border border-indigo-100 rounded-2xl">
         <table className="table-auto bg-white text-[11px] w-full">
-          {/* Sticky thead — pinned to the top edge of the wrapper so column
-              headers stay visible during vertical scroll. z-30 keeps it
-              above the body's left-sticky cells (z-10). */}
           <thead className="sticky top-0 z-30">
-            {/* Action + SN cells are sticky so they stay pinned to the
-                left edge during horizontal scroll, giving the user a
-                stable per-row anchor. */}
             <tr className="h-10 text-white bg-rose-800">
               <th
                 className="px-2 py-2 text-center sticky left-0 z-20 bg-rose-800 w-10"
@@ -146,37 +141,33 @@ export default function BroadsheetAffectiveView({
               </th>
 
               {behaviours.map((b) => (
-                <th
+                <RotatedHeader
                   key={b.id}
                   colSpan={2}
-                  className="px-2 py-2 border-l border-l-rose-300 [writing-mode:vertical-rl] rotate-180 whitespace-nowrap"
+                  extraClassName="border-l border-l-rose-300"
                 >
                   {b.behaviour}
-                </th>
+                </RotatedHeader>
               ))}
 
+              {/* Summary columns — Total Obtainable and Position removed
+                  per current spec; only the two most useful summaries
+                  remain. */}
               <SummaryHeader>Behaviours Assessed</SummaryHeader>
               <SummaryHeader>Overall Total</SummaryHeader>
-              <SummaryHeader>Total Obtainable</SummaryHeader>
-              <SummaryHeader>Position</SummaryHeader>
             </tr>
 
             {/* Second row — SCORE / GRADE labels under each behaviour. */}
             <tr className="h-10 text-white bg-rose-800">
               {behaviours.map((b) => (
                 <Fragment key={`hdr2-${b.id}`}>
-                  <th
+                  <RotatedHeader
                     key={`${b.id}-score`}
-                    className="px-2 py-2 text-center border-l border-l-rose-300 [writing-mode:vertical-rl] rotate-180"
+                    extraClassName="border-l border-l-rose-300"
                   >
                     SCORE
-                  </th>
-                  <th
-                    key={`${b.id}-grade`}
-                    className="px-2 py-2 text-center [writing-mode:vertical-rl] rotate-180"
-                  >
-                    GRADE
-                  </th>
+                  </RotatedHeader>
+                  <RotatedHeader key={`${b.id}-grade`}>GRADE</RotatedHeader>
                 </Fragment>
               ))}
             </tr>
@@ -185,8 +176,7 @@ export default function BroadsheetAffectiveView({
           <tbody>
             {visibleStudents.map((student, rowIndex) => {
               const studentResult = classResult.students[student.id];
-              const total = affectiveRankings.totalsById[student.id] ?? 0;
-              const position = affectiveRankings.positions[student.id] ?? "—";
+              const total = affectiveTotals[student.id] ?? 0;
 
               // Count of behaviours that actually have a non-absent score.
               const assessedCount = studentResult
@@ -236,14 +226,13 @@ export default function BroadsheetAffectiveView({
                   {behaviours.map((b) => {
                     const traitResult = studentResult?.behaviours[b.id];
                     const score = traitResult?.score;
-                    const display = score === -1 ? "ABS" : (score ?? "—");
                     return (
                       <Fragment key={`${student.id}-${b.id}-group`}>
                         <td
                           key={`${student.id}-${b.id}-score`}
                           className="px-1 py-2 border-l border-l-rose-100 text-slate-700"
                         >
-                          {display}
+                          <ScoreCell score={score} />
                         </td>
                         <td
                           key={`${student.id}-${b.id}-grade`}
@@ -257,8 +246,6 @@ export default function BroadsheetAffectiveView({
 
                   <SummaryCell>{assessedCount}</SummaryCell>
                   <SummaryCell>{total}</SummaryCell>
-                  <SummaryCell>{maxOverallTotal}</SummaryCell>
-                  <SummaryCell>{position}</SummaryCell>
                 </tr>
               );
             })}
@@ -282,14 +269,41 @@ export default function BroadsheetAffectiveView({
   );
 }
 
-// ── Header / cell helpers (rose accent for the affective table) ────────
+// ── Rotated cell primitives ──────────────────────────────────────────────
+
+function RotatedHeader({
+  children,
+  extraClassName = "",
+  colSpan,
+  rowSpan,
+}: {
+  children: React.ReactNode;
+  extraClassName?: string;
+  colSpan?: number;
+  rowSpan?: number;
+}) {
+  return (
+    <th
+      colSpan={colSpan}
+      rowSpan={rowSpan}
+      className={`px-2 py-2 text-center align-bottom ${extraClassName}`}
+    >
+      <span className="inline-block [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">
+        {children}
+      </span>
+    </th>
+  );
+}
+
 function SummaryHeader({ children }: { children: React.ReactNode }) {
   return (
     <th
-      className="px-2 py-2 [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 border-l border-l-rose-300 whitespace-nowrap"
+      className="px-2 py-2 border-l border-l-rose-300 align-bottom lg:align-middle"
       rowSpan={2}
     >
-      {children}
+      <span className="inline-block [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 whitespace-nowrap">
+        {children}
+      </span>
     </th>
   );
 }
@@ -300,4 +314,15 @@ function SummaryCell({ children }: { children: React.ReactNode }) {
       {children}
     </td>
   );
+}
+
+// ── ScoreCell ─────────────────────────────────────────────────────────────
+// Small helper matching the cognitive view — small-weight ABS pill for
+// the absent sentinel, "—" for missing, raw score otherwise.
+function ScoreCell({ score }: { score: number | null | undefined }) {
+  if (score === -1) {
+    return <span className="text-[9px] font-semibold text-slate-500">ABS</span>;
+  }
+  if (score == null) return <>—</>;
+  return <>{score}</>;
 }

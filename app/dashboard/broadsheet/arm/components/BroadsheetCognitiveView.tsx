@@ -11,21 +11,31 @@
 // Rendering choices:
 //   - The header is two-row: top row holds the subject name spanning all of
 //     its unit columns, the second row holds the unit abbreviations.
-//   - Long header text rotates to [writing-mode:vertical-rl] so the table
-//     stays compact even with 10+ subjects.
-//   - The outer wrapper scrolls in both axes inside a capped max-height —
-//     broadsheets are inherently wide and can be long. Sticky positioning
-//     keeps the header rows pinned to the top during vertical scroll and
-//     the Action/SN cells pinned to the left during horizontal scroll, so
-//     the user always has a column-and-row anchor while exploring data.
+//   - Long header text rotates via `writing-mode: vertical-rl` + rotate(180).
+//     The rotation and writing-mode classes live on an inner `<span
+//     className="inline-block …">` inside each `<th>` (not on the `<th>`
+//     itself). Reason: on Safari/WebKit, applying `writing-mode` and
+//     `transform: rotate(180deg)` directly to a `<th>` renders the glyphs
+//     upside down instead of bottom-to-top. Wrapping the text in an inline-
+//     block span gives the transform a stable inline layout box and the
+//     rendering matches Chromium.
+//   - The outer wrapper scrolls in both axes inside a capped max-height, and
+//     carries a small bottom-spacer div so the horizontal scrollbar doesn't
+//     obscure the last data row.
 //
-// Data: everything comes from the provider — students, subjects, assessment
-// format columns, and the pre-computed per-student totals/grades/positions.
+// Loading gate:
+//   isPending (top-level, arm-fetch) is handled by the parent — this file
+//   is only mounted once the arm has loaded. But secondary queries
+//   (subjects, students, classResult) may still be in flight when we mount,
+//   and rendering an empty state during that window would flash "No
+//   subjects set up" for a fraction of a second. We show a `TableLoader`
+//   instead while any of those three queries is still pending.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Fragment, useMemo, useState } from "react";
 
 import EmptyState from "../../../components/Emptystate";
+import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
@@ -38,16 +48,22 @@ interface ActiveModalState {
 }
 
 interface BroadsheetCognitiveViewProps {
-  // Client-side text search applied across student name + public id.
   searchQuery: string;
 }
 
 export default function BroadsheetCognitiveView({
   searchQuery,
 }: BroadsheetCognitiveViewProps) {
-  const { arm, students, subjects, classResult } = useBroadsheetDetails();
+  const {
+    arm,
+    students,
+    subjects,
+    classResult,
+    subjectsPending,
+    studentsPending,
+    classResultPending,
+  } = useBroadsheetDetails();
 
-  // Modal state — see ActiveModalState above for purpose.
   const [activeModal, setActiveModal] = useState<ActiveModalState | null>(null);
 
   // Sort assessment-format units by display_order so the column order is
@@ -65,7 +81,6 @@ export default function BroadsheetCognitiveView({
   }, [subjects]);
 
   // Total obtainable score per subject — sum of every unit's max_score.
-  // Reused inside the rows so we precompute once.
   const subjectMaxScore = useMemo(
     () => units.reduce((sum, u) => sum + u.max_score, 0),
     [units],
@@ -87,8 +102,16 @@ export default function BroadsheetCognitiveView({
     });
   }, [students, searchQuery]);
 
-  // ── Empty states (config or roster missing) ─────────────────────────────
   if (!arm) return null;
+
+  // Wait for every query this view depends on before deciding between the
+  // table and an empty state. This eliminates the flash where `subjects`
+  // is briefly `[]` (the provider's default) before the real fetch lands.
+  if (subjectsPending || studentsPending || classResultPending) {
+    return <TableLoader rows={8} className="my-4" />;
+  }
+
+  // ── Empty states (config or roster missing) ─────────────────────────────
 
   if (units.length === 0) {
     return (
@@ -128,22 +151,12 @@ export default function BroadsheetCognitiveView({
     <>
       {/* Wrapper handles BOTH axes of scroll. A capped max-height keeps the
           table from running off the page on long rosters; sticky thead
-          (below) then pins the column headers to the top of the wrapper
-          during vertical scroll, mirroring how the SN/Action cells pin to
-          the left during horizontal scroll. */}
+          pins the column headers during vertical scroll, and the SN/Action
+          cells pin during horizontal scroll. */}
       <div className="overflow-auto max-h-[80vh] border border-indigo-100 rounded-2xl">
         <table className="table-auto bg-white text-[11px] w-full">
-          {/* `sticky top-0 z-30` pins the entire header block (both rows,
-              including the rowSpan=2 corners) to the top edge of the
-              wrapper. z-30 keeps it above body sticky cells (z-10) so the
-              header always wins overlap. */}
           <thead className="sticky top-0 z-30">
-            {/* Top header row — bio + subject names + summary columns.
-                Action and SN cells are sticky so they stay pinned to the
-                left edge while the user scrolls horizontally through the
-                subject columns. The SN cell carries a right border to mark
-                the boundary between the pinned area and the scrolling
-                content. */}
+            {/* Top header row — bio + subject names + summary columns. */}
             <tr className="h-10 text-white bg-indigo-900">
               <th
                 className="px-2 py-2 text-center sticky left-0 z-20 bg-indigo-900 w-10"
@@ -166,25 +179,26 @@ export default function BroadsheetCognitiveView({
               >
                 ID
               </th>
-              <th
-                className="px-2 py-2 text-center border-l border-l-indigo-300 [writing-mode:vertical-rl] rotate-180"
+              <RotatedHeader
+                extraClassName="border-l border-l-indigo-300"
                 rowSpan={2}
               >
                 SEX
-              </th>
+              </RotatedHeader>
 
-              {/* Subject group headers — span all of the subject's units + TOTAL + GRADE. */}
+              {/* Subject group headers — span all of the subject's units +
+                  TOTAL + GRADE. */}
               {orderedSubjects.map((subject) => (
-                <th
+                <RotatedHeader
                   key={subject.id}
                   colSpan={units.length + 2}
-                  className="px-2 py-2 border-l border-l-indigo-300 [writing-mode:vertical-rl] rotate-180 whitespace-nowrap"
+                  extraClassName="border-l border-l-indigo-300"
                 >
                   {subject.definition.name}
-                </th>
+                </RotatedHeader>
               ))}
 
-              {/* Summary columns — rotated so they stay narrow. */}
+              {/* Summary columns — rotated on md-, horizontal on lg+. */}
               <SummaryHeader>Subjects Taken</SummaryHeader>
               <SummaryHeader>Overall Total</SummaryHeader>
               <SummaryHeader>Total Obtainable</SummaryHeader>
@@ -199,27 +213,21 @@ export default function BroadsheetCognitiveView({
               {orderedSubjects.map((subject) => (
                 <Fragment key={`hdr2-${subject.id}`}>
                   {units.map((unit, idx) => (
-                    <th
+                    <RotatedHeader
                       key={`${subject.id}-${unit.id}`}
-                      className={`px-2 py-2 text-center [writing-mode:vertical-rl] rotate-180 ${
+                      extraClassName={
                         idx === 0 ? "border-l border-l-indigo-300" : ""
-                      }`}
+                      }
                     >
                       {unit.abbr}
-                    </th>
+                    </RotatedHeader>
                   ))}
-                  <th
-                    key={`${subject.id}-total`}
-                    className="px-2 py-2 text-center [writing-mode:vertical-rl] rotate-180"
-                  >
+                  <RotatedHeader key={`${subject.id}-total`}>
                     TOTAL
-                  </th>
-                  <th
-                    key={`${subject.id}-grade`}
-                    className="px-2 py-2 text-center [writing-mode:vertical-rl] rotate-180"
-                  >
+                  </RotatedHeader>
+                  <RotatedHeader key={`${subject.id}-grade`}>
                     GRADE
-                  </th>
+                  </RotatedHeader>
                 </Fragment>
               ))}
             </tr>
@@ -229,10 +237,6 @@ export default function BroadsheetCognitiveView({
             {visibleStudents.map((student, rowIndex) => {
               const studentResult = classResult.students[student.id];
 
-              // Build per-student grade tally (e.g. {A:5, B:2, C:1}) so the
-              // "Grades Summary" column can render counts without any
-              // additional fetch. Object iteration order is fine here —
-              // Object.values returns insertion order for string keys.
               const gradeTally = (() => {
                 const tally: Record<string, number> = {};
                 if (!studentResult) return tally;
@@ -260,10 +264,6 @@ export default function BroadsheetCognitiveView({
                     rowIndex % 2 === 0 ? "bg-white" : "bg-indigo-50/40"
                   }`}
                 >
-                  {/* Action menu — sticky so it stays accessible regardless
-                      of horizontal scroll position. The bg colour matches
-                      the row's alternating shade so scrolled content can't
-                      bleed through. */}
                   <td
                     className={`px-2 py-1 sticky left-0 z-10 w-10 ${
                       rowIndex % 2 === 0 ? "bg-white" : "bg-indigo-50"
@@ -278,16 +278,11 @@ export default function BroadsheetCognitiveView({
                         setActiveModal({ variant: "access", student })
                       }
                       onPrintResult={() => {
-                        // Per-student print isn't wired yet — placeholder
-                        // toast in the parent. We intentionally don't import
-                        // toast here to keep this component leaf-light.
+                        /* Placeholder — per-student print is not wired yet. */
                       }}
                     />
                   </td>
 
-                  {/* Bio cells — SN is sticky too, giving each row a
-                      persistent identifier the user can follow while
-                      scrolling through wide subject data. */}
                   <td
                     className={`px-2 py-2 text-slate-500 sticky left-10 z-10 w-12 border-r border-r-indigo-100 ${
                       rowIndex % 2 === 0 ? "bg-white" : "bg-indigo-50"
@@ -313,18 +308,11 @@ export default function BroadsheetCognitiveView({
                     return (
                       <Fragment key={`${student.id}-${subject.id}-group`}>
                         {units.map((unit, idx) => {
-                          // The compute-endpoint response positions the
-                          // `scores` array against the units sorted by
-                          // display_order ascending — index i in `scores`
-                          // corresponds to `units[i]` (units is already
-                          // sorted above). Reading by `unit.display_order`
-                          // would break when display_order values aren't
-                          // contiguous.
+                          // Score index i in `scores` corresponds to
+                          // `units[i]` (both sorted by display_order). Do
+                          // NOT read by display_order value directly — it
+                          // can be non-contiguous.
                           const rawScore = subjectResult?.scores[idx];
-                          // Score === -1 represents "absent" (see
-                          // results.d.ts for the score conventions).
-                          const display =
-                            rawScore === -1 ? "ABS" : (rawScore ?? "—");
                           return (
                             <td
                               key={`${student.id}-${subject.id}-${unit.id}`}
@@ -332,7 +320,7 @@ export default function BroadsheetCognitiveView({
                                 idx === 0 ? "border-l border-l-indigo-100" : ""
                               }`}
                             >
-                              {display}
+                              <ScoreCell score={rawScore} />
                             </td>
                           );
                         })}
@@ -387,9 +375,14 @@ export default function BroadsheetCognitiveView({
             })}
           </tbody>
         </table>
+
+        {/* Spacer below the table so the horizontal scrollbar doesn't
+            obscure the last row's content. `pb-*` on the wrapper doesn't
+            reliably reserve space inside overflow-auto across browsers,
+            so we drop a real spacer element instead. */}
+        <div aria-hidden className="h-4" />
       </div>
 
-      {/* Modal — single instance shared across rows. */}
       {activeModal && (
         <StudentInfoModal
           variant={activeModal.variant}
@@ -404,17 +397,48 @@ export default function BroadsheetCognitiveView({
   );
 }
 
-// ── Header / cell helpers ───────────────────────────────────────────────
-// Tiny abstractions to keep the JSX skim-readable above. The summary
-// header rotates on mobile + medium screens, then unrotates on lg+ where
-// there's more horizontal room.
+// ── Rotated cell primitives ──────────────────────────────────────────────
+// See file header for the rationale behind wrapping the rotated text in an
+// inner inline-block span rather than rotating the `<th>` directly.
+
+// Base rotated column header — vertical writing mode, rotated 180deg.
+// Used for the SEX corner cell and the subject / unit labels.
+function RotatedHeader({
+  children,
+  extraClassName = "",
+  colSpan,
+  rowSpan,
+}: {
+  children: React.ReactNode;
+  extraClassName?: string;
+  colSpan?: number;
+  rowSpan?: number;
+}) {
+  return (
+    <th
+      colSpan={colSpan}
+      rowSpan={rowSpan}
+      className={`px-2 py-2 text-center align-bottom ${extraClassName}`}
+    >
+      <span className="inline-block [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">
+        {children}
+      </span>
+    </th>
+  );
+}
+
+// Summary column header — rotated on md- and horizontal on lg+ where we
+// have room. The responsive switch lives on the inner span so Safari
+// respects the transform origin.
 function SummaryHeader({ children }: { children: React.ReactNode }) {
   return (
     <th
-      className="px-2 py-2 [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 border-l border-l-indigo-300 whitespace-nowrap"
+      className="px-2 py-2 border-l border-l-indigo-300 align-bottom lg:align-middle"
       rowSpan={2}
     >
-      {children}
+      <span className="inline-block [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 whitespace-nowrap">
+        {children}
+      </span>
     </th>
   );
 }
@@ -425,4 +449,17 @@ function SummaryCell({ children }: { children: React.ReactNode }) {
       {children}
     </td>
   );
+}
+
+// ── ScoreCell ─────────────────────────────────────────────────────────────
+// Presentation for a single cognitive-score cell. Renders the raw score
+// when present, "—" when missing, and a smaller-weight "ABS" pill for the
+// absent sentinel (-1). Extracted so all three tables can share the same
+// rendering for the absent case.
+function ScoreCell({ score }: { score: number | null | undefined }) {
+  if (score === -1) {
+    return <span className="text-[9px] font-semibold text-slate-500">ABS</span>;
+  }
+  if (score == null) return <>—</>;
+  return <>{score}</>;
 }

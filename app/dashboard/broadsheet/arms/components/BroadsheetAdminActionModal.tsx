@@ -22,11 +22,12 @@
 //
 // Backend wiring (academics.views.ArmBroadsheetView):
 //   PUT arm/detail/broadsheet/
-//     body: { id: armId, school_id, broadsheet: action }
+//     body: { id: armId, school_id: SCHOOL_ID, broadsheet: action }
 //
-// MOCK NOTE: while we are in mock mode this calls `applyBroadsheetAction`
-// from the local mock-data module instead of clientAuthFetch. The function
-// signature mirrors the real call so the swap is a one-line change.
+//   The backend's serializer raises a ValidationError at the first failed
+//   check (one message, not a list). Our checklist UI is array-based; we
+//   extract every string we can find in error.data so the inline list
+//   handles the single-issue case naturally.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
@@ -35,11 +36,19 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, RotateCcw, X } from "lucide-react";
 import { toast } from "react-toastify";
 
+import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../../components/Buttonloader";
-import {
-  applyBroadsheetAction,
-  type BroadsheetActionVerb,
-} from "../broadsheet-mock-data";
+import type { ApiEnvelope } from "../page";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
+
+// Broadsheet action verbs accepted by the backend serializer. Inlined here
+// because the previous shared source (broadsheet-mock-data.ts) has been
+// removed as part of the backend wire-up. Kept as an exported type so
+// BroadsheetsList can constrain its action state to the admin subset below.
+export type BroadsheetActionVerb = "submit" | "resend" | "revoke" | "approve";
 
 // Restrict the modal's `action` to the two admin-side verbs. Teacher-side
 // verbs ("submit", "resend") have their own dedicated modal elsewhere.
@@ -143,6 +152,7 @@ export default function BroadsheetAdminActionModal({
   onClose,
 }: BroadsheetAdminActionModalProps) {
   const queryClient = useQueryClient();
+  const { clientAuthFetch } = useClientAuthFetch();
   const copy = VARIANT_COPY[action];
   const Icon = copy.Icon;
 
@@ -167,16 +177,29 @@ export default function BroadsheetAdminActionModal({
   }, [onClose]);
 
   // ── Mutation ─────────────────────────────────────────────────────────────
-  // MOCK: hits the local applyBroadsheetAction helper. To wire to the real
-  // backend, replace this call with:
-  //   const { data, error } = await clientAuthFetch("arm/detail/broadsheet/", {
-  //     method: "PUT",
-  //     body: { id: armId, school_id: SCHOOL_ID, broadsheet: action },
-  //   });
+  // PUT arm/detail/broadsheet/ transitions the arm's broadsheet status. The
+  // backend enforces every business rule (valid state transitions, config
+  // completeness, missing scores, etc.) and surfaces failures as
+  // serializer.errors — we lift those out via extractIssues() and render
+  // them inline as a checklist.
   const { mutate, isPending } = useMutation({
     mutationFn: async () => {
-      const { data, error } = await applyBroadsheetAction(armId, action);
+      const { data, error } = await clientAuthFetch<ApiEnvelope<unknown>>(
+        "arm/detail/broadsheet/",
+        {
+          method: "PUT",
+          body: {
+            id: armId,
+            school_id: SCHOOL_ID,
+            broadsheet: action,
+          },
+        },
+      );
+
       if (error) {
+        // Treat any backend error response as a validation issue — these are
+        // surfaced in the inline checklist rather than a toast so the user
+        // can fix the underlying data before retrying.
         const extracted = extractIssues(error.data, error.message);
         throw new BroadsheetValidationError(extracted);
       }
@@ -184,9 +207,17 @@ export default function BroadsheetAdminActionModal({
     },
     onSuccess: () => {
       toast.success(copy.successMessage);
-      // Refresh every cached broadsheet query so the list reflects the new state.
-      // ["broadsheet-arms"] is the broad key used by BroadsheetsList.
+      // Refresh every cached broadsheet list query so the row picks up the
+      // new state. React Query does prefix matching by default, so this
+      // catches the fully-keyed ["broadsheet-arms", schoolId, termId] variant
+      // used by BroadsheetsList as well as any future siblings.
       queryClient.invalidateQueries({ queryKey: ["broadsheet-arms"] });
+      // Also invalidate the arm-detail cache in case the user has the
+      // broadsheet detail page open for this arm — that page's provider
+      // owns ["broadsheet-arm-detail", armId].
+      queryClient.invalidateQueries({
+        queryKey: ["broadsheet-arm-detail", armId],
+      });
       onClose();
     },
     onError: (err) => {
