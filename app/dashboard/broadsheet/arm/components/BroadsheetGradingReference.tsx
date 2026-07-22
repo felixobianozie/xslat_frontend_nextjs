@@ -64,14 +64,31 @@ export default function BroadsheetGradingReference() {
 }
 
 // ── Pass rule ────────────────────────────────────────────────────────────
+// Section shape mirrors the "Grading Systems" block below: heading sits
+// outside the card, card contains only the substantive body. For the pass
+// rule specifically the outside header carries two extra affordances that
+// Grading Systems doesn't need — a subtitle showing the specific rule
+// name, and an optional "Inactive" pill on the right — but the parent
+// layout is the same: <h3> outside, card underneath.
 function PassRule({ rule }: { rule: ArmPassRule | null }) {
+  // Empty state — no pass rule configured. Heading + "Not configured"
+  // subtitle still render outside so the section preserves the same
+  // header shape whether or not a rule exists.
   if (!rule) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-        <p className="text-xs text-slate-500">
-          No pass rule is configured for this arm. Pass / fail decisions fall
-          back to the default threshold.
-        </p>
+      <div>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Pass Decision Rule
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">Not configured</p>
+        </div>
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+          <p className="text-xs text-slate-500">
+            No pass rule is configured for this arm. Pass / fail decisions fall
+            back to the default threshold.
+          </p>
+        </div>
       </div>
     );
   }
@@ -95,7 +112,12 @@ function PassRule({ rule }: { rule: ArmPassRule | null }) {
   }
 
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-white p-5">
+    <div>
+      {/* Section header — outside the card. Heading + rule name on the
+          left; Inactive pill on the right when applicable. The pill is
+          a status modifier of the rule itself, so it visually pairs
+          with the rule name here rather than sitting inside the card
+          alongside the criteria list. */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-800">
@@ -110,33 +132,36 @@ function PassRule({ rule }: { rule: ArmPassRule | null }) {
         )}
       </div>
 
-      <ul className="flex flex-col gap-2">
-        <li className="text-xs text-slate-700 flex items-start gap-2">
-          <span className="w-1.5 h-1.5 mt-1.5 bg-violet-500 rounded-full shrink-0" />
-          <span>{summarise()}</span>
-        </li>
-        {rule.subjects.map((subj) => {
-          const subjValue = parseFloat(subj.base_value);
-          const threshold =
-            rule.decide_by === "percentage"
-              ? `${Math.round(subjValue * 100)}%`
-              : String(subjValue);
-          return (
-            <li
-              key={subj.id}
-              className="text-xs text-slate-700 flex items-start gap-2"
-            >
-              <span className="w-1.5 h-1.5 mt-1.5 bg-violet-500 rounded-full shrink-0" />
-              <span>
-                {subj.subject_definition.name} must reach at least {threshold}
-                {rule.decide_by === "percentage"
-                  ? " of its total obtainable."
-                  : "."}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {/* Card body — pass-criteria bullet list only. */}
+      <div className="rounded-2xl border border-indigo-100 bg-white p-5">
+        <ul className="flex flex-col gap-2">
+          <li className="text-xs text-slate-700 flex items-start gap-2">
+            <span className="w-1.5 h-1.5 mt-1.5 bg-violet-500 rounded-full shrink-0" />
+            <span>{summarise()}</span>
+          </li>
+          {rule.subjects.map((subj) => {
+            const subjValue = parseFloat(subj.base_value);
+            const threshold =
+              rule.decide_by === "percentage"
+                ? `${Math.round(subjValue * 100)}%`
+                : String(subjValue);
+            return (
+              <li
+                key={subj.id}
+                className="text-xs text-slate-700 flex items-start gap-2"
+              >
+                <span className="w-1.5 h-1.5 mt-1.5 bg-violet-500 rounded-full shrink-0" />
+                <span>
+                  {subj.subject_definition.name} must reach at least {threshold}
+                  {rule.decide_by === "percentage"
+                    ? " of its total obtainable."
+                    : "."}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

@@ -3,62 +3,51 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BroadsheetInfo.tsx
 //
-// Header card at the top of the broadsheet detail page. Three cards on a
+// Header card row at the top of the broadsheet detail page. Two cards on a
 // horizontal grid at md+:
 //
-//   1. Identity — the arm label + term/session + broadsheet status badge.
-//   2. Performance — class average, passed / failed / total students, plus
-//      a compact male/female gender breakdown pulled from the roster.
-//   3. Results Access — school/term/session pin usage rollup: assessments
-//      accessed, total accesses, unique pins issued, last accessed at.
+//   1. Identity — the arm label + term/session + a row of status pills
+//      (broadsheet submission state, and the term's results-published state).
+//   2. Performance — class average as a featured hero tile on the left, and
+//      the five secondary counters (Passed / Failed / Students / Male /
+//      Female) inline on the right in a single horizontal strip. The whole
+//      card fits in a shallow vertical band so the row height is dictated
+//      by the identity card's content rather than a tall stats grid.
 //
-// Data:
-//   - `students`, `arm`, `classResult`, `schoolAccessStat` — all from the
-//     provider. Nothing is fetched or computed here beyond simple tallies.
-//   - The Results Access card handles three data states: loading (skeleton),
-//     no activity yet (`schoolAccessStat === null`), and populated.
+// The previous Results Access card lived here alongside these two. That
+// analytic is scoped to the school/term/session rather than to a single
+// arm, so it moved to the Broadsheet Arms *list* page next to Term
+// Approval Progress. See BroadsheetsList.tsx for its new home.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { GraduationCap, Lock, Mars, Venus } from "lucide-react";
+import type { ComponentType } from "react";
+import {
+  CheckCircle2,
+  GraduationCap,
+  Mars,
+  Users,
+  Venus,
+  XCircle,
+} from "lucide-react";
+import type { LucideProps } from "lucide-react";
 
 import BroadsheetStatusBadge from "../../arms/components/BroadsheetStatusBadge";
-import {
-  useBroadsheetDetails,
-  type SchoolTermResultStat,
-} from "../context/BroadsheetDetailsProvider";
+import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
 
-// ── Utility: format an ISO datetime for the "last accessed" line ────────────
-// Uses the user's locale — short date, short time. Silently returns "—" for
-// null/invalid inputs so the caller doesn't need to null-check.
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+// Loose alias for a lucide-react icon component. Every icon we import from
+// lucide implements this signature. Keeping the alias narrow means the tile
+// helpers can type-check the icon prop without depending on lucide's
+// deeper generics.
+type IconComponent = ComponentType<LucideProps>;
 
 export default function BroadsheetInfo() {
-  const {
-    arm,
-    students,
-    classResult,
-    schoolAccessStat,
-    schoolAccessStatPending,
-    isPending,
-  } = useBroadsheetDetails();
+  const { arm, students, classResult, isPending } = useBroadsheetDetails();
 
   // ── Loading state — mirrors the populated card so layout doesn't shift ──
   if (isPending) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
         <div className="rounded-2xl bg-indigo-700/80 p-6 animate-pulse h-32" />
-        <div className="rounded-2xl bg-slate-100 p-6 animate-pulse h-32" />
         <div className="rounded-2xl bg-slate-100 p-6 animate-pulse h-32" />
       </div>
     );
@@ -85,18 +74,23 @@ export default function BroadsheetInfo() {
     (s) => s.decision === "Fail",
   ).length;
 
-  // Gender split. Backend stores gender as "M" | "F" | "O"; we surface male
-  // and female here on the Performance card. "Other" is folded into the
-  // Students total but doesn't get its own pill on this compact layout.
+  // Backend stores gender as "M" | "F" | "O". Male / female get their own
+  // tiles; "Other" is folded into the Students total without its own pill.
   const maleCount = students.filter((s) => s.gender === "M").length;
   const femaleCount = students.filter((s) => s.gender === "F").length;
 
   const armLabel = `${section.abbr} ${arm.level.abbr} ${arm.abbr}`;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
       {/* ── Identity card ────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-indigo-700 p-6 text-white shadow-lg shadow-violet-200">
+      {/* flex-col + justify-center: on md+ the two cards stretch to the
+          tallest row height (CSS grid's default `align-items: stretch`);
+          without vertical centring the identity content sat pinned to the
+          top of that row leaving a lot of empty space beneath. The
+          absolutely-positioned GraduationCap is unaffected by the flex
+          layout since it's taken out of flow. */}
+      <div className="relative overflow-hidden rounded-2xl bg-indigo-700 p-6 text-white shadow-lg shadow-violet-200 flex flex-col justify-center">
         <GraduationCap
           size={120}
           className="absolute -right-4 -bottom-4 text-white/10"
@@ -113,218 +107,153 @@ export default function BroadsheetInfo() {
             {term?.name ? `${term.name} Term` : "Term unavailable"}
             {session ? ` · ${session.name}` : ""}
           </div>
-          <div className="mt-2">
+          {/* Status pill row — broadsheet submission state and, next to it,
+              the term's own publish state. Flex-wrap so both pills stay
+              legible on narrow viewports where the card is one column. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <BroadsheetStatusBadge status={arm.broadsheet} />
+            <TermResultsTag status={term?.results_status} />
           </div>
         </div>
       </div>
 
       {/* ── Performance card ─────────────────────────────────────────────
-          Class average headlines; below it a compact stat grid mixes the
-          pass / fail / total counts with the male / female split. The
-          gender pills use the same slot pattern as the other stats so
-          the visual weight of the row stays balanced. */}
-      <div className="rounded-2xl border border-indigo-100 bg-white p-5">
-        <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+          Compact horizontal layout: featured class-average hero on the
+          left, five secondary metric tiles inline on the right. Whole
+          card fits in a shallow vertical band — the previous 3-row
+          stacked design used ~3x this height, which now lets the
+          Identity card next door co-determine the row height instead of
+          being dictated to by Performance. Tiles switch from a 3-then-2
+          grid on narrow viewports to a single 5-column row from sm up. */}
+      <div className="rounded-2xl border border-indigo-100 bg-white p-4 sm:p-5 flex flex-col justify-center">
+        <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold mb-3">
           Performance
         </div>
 
-        <div className="flex items-end gap-2 mt-2">
-          <span className="text-3xl font-bold text-slate-800">
-            {classResult.class_average.toFixed(2)}
-          </span>
-          <span className="text-xs text-slate-400 mb-1">class average</span>
-        </div>
+        <div className="flex items-center gap-3 sm:gap-4">
+          {/* Featured class-average hero — separated from the metrics by
+              a right border so it reads as the headline figure. Fixed on
+              the left so it doesn't shrink under the tile grid. */}
+          <div className="shrink-0 pr-3 sm:pr-4 border-r border-slate-100">
+            <div className="text-2xl sm:text-3xl font-bold text-slate-800 tabular-nums leading-none">
+              {classResult.class_average.toFixed(2)}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">
+              Class Average
+            </div>
+          </div>
 
-        {/* First row — outcomes (pass, fail, total). */}
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          <Stat
-            value={passedCount}
-            label="Passed"
-            valueClasses="text-emerald-600"
-          />
-          <Stat
-            value={failedCount}
-            label="Failed"
-            valueClasses="text-red-500"
-          />
-          <Stat
-            value={students.length}
-            label="Students"
-            valueClasses="text-violet-600"
-          />
-        </div>
-
-        {/* Second row — gender counters. Two-column grid to keep the pill
-            heights aligned with the outcome row above. */}
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          <GenderPill
-            Icon={Mars}
-            iconClasses="text-blue-600"
-            wrapperClasses="bg-blue-50"
-            count={maleCount}
-            label="Male"
-          />
-          <GenderPill
-            Icon={Venus}
-            iconClasses="text-pink-600"
-            wrapperClasses="bg-pink-50"
-            count={femaleCount}
-            label="Female"
-          />
+          {/* Five metric tiles. 3-col on very narrow screens (they wrap
+              into two rows there); a single 5-col row from sm up. Each
+              tile is a stacked icon + bold value + muted label so all
+              five read at the same visual weight regardless of column
+              width. */}
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 flex-1 min-w-0">
+            <CompactMetric
+              Icon={CheckCircle2}
+              iconClasses="text-emerald-600 bg-emerald-50"
+              value={passedCount}
+              label="Passed"
+            />
+            <CompactMetric
+              Icon={XCircle}
+              iconClasses="text-red-500 bg-red-50"
+              value={failedCount}
+              label="Failed"
+            />
+            <CompactMetric
+              Icon={Users}
+              iconClasses="text-violet-600 bg-violet-50"
+              value={students.length}
+              label="Students"
+            />
+            <CompactMetric
+              Icon={Mars}
+              iconClasses="text-blue-600 bg-blue-50"
+              value={maleCount}
+              label="Male"
+            />
+            <CompactMetric
+              Icon={Venus}
+              iconClasses="text-pink-600 bg-pink-50"
+              value={femaleCount}
+              label="Female"
+            />
+          </div>
         </div>
       </div>
-
-      {/* ── Results Access card ─────────────────────────────────────────
-          School-level pin usage rollup. Three data states:
-            - loading  → skeleton bars in the stat slots
-            - null     → "no activity recorded yet" empty state
-            - present  → assessments accessed / total accesses / unique
-                         pins issued, with the last-accessed timestamp. */}
-      <ResultsAccessCard
-        stat={schoolAccessStat}
-        isPending={schoolAccessStatPending}
-      />
     </div>
   );
 }
 
-// ── Stat ─────────────────────────────────────────────────────────────────
-// Small inline figure used in the performance card's top row.
-function Stat({
-  value,
-  label,
-  valueClasses,
+// ── TermResultsTag ───────────────────────────────────────────────────────
+// Renders as a small pill next to the broadsheet-status badge on the
+// identity card. Binary display:
+//   - "published" → green Published pill
+//   - anything else (including undefined/missing on the wire) → gray
+//     Unpublished pill.
+//
+// Backend caveat: the current ArmDetailView doesn't include
+// "results_status" in its include_term_fields tuple, so this component
+// will render "Unpublished" for every arm until that tuple is updated
+// on the server. The graceful fallback here means we ship no broken UI
+// in the interim; adding "results_status" to the include tuple is a
+// one-line backend edit.
+function TermResultsTag({
+  status,
 }: {
-  value: number;
-  label: string;
-  valueClasses: string;
+  status?: "nota" | "computing" | "published";
 }) {
+  const isPublished = status === "published";
+  const label = isPublished ? "Published" : "Unpublished";
+
+  // Colour: emerald for published, neutral slate for anything else. Slate
+  // reads clearly on the dark indigo identity-card background alongside
+  // the broadsheet status badge.
+  const pillClasses = isPublished
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : "bg-slate-100 text-slate-600 border-slate-200";
+  const dotClasses = isPublished ? "bg-emerald-500" : "bg-slate-400";
+
   return (
-    <div className="flex flex-col">
-      <span className={`text-lg font-bold leading-tight ${valueClasses}`}>
-        {String(value).padStart(2, "0")}
-      </span>
-      <span className="text-[10px] text-slate-400">{label}</span>
-    </div>
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${pillClasses}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dotClasses}`} />
+      {label}
+    </span>
   );
 }
 
-// ── GenderPill ───────────────────────────────────────────────────────────
-// Icon + count pair used for the male/female counters on the performance
-// card. Kept as its own component so the pill markup stays skim-readable
-// above and each pill can carry its own colour scheme.
-function GenderPill({
+// ── CompactMetric ────────────────────────────────────────────────────────
+// Stacked layout: coloured icon pill on top, bold value in the middle,
+// small muted label below. Designed for the horizontal metric strip on
+// the Performance card, where each tile lives inside a narrow grid cell
+// and the vertical stack keeps every tile the same footprint.
+function CompactMetric({
   Icon,
   iconClasses,
-  wrapperClasses,
-  count,
+  value,
   label,
 }: {
-  Icon: typeof Mars;
+  Icon: IconComponent;
   iconClasses: string;
-  wrapperClasses: string;
-  count: number;
+  value: number;
   label: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-col items-center text-center min-w-0">
       <span
-        className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${wrapperClasses}`}
+        className={`w-7 h-7 rounded-full flex items-center justify-center mb-1 shrink-0 ${iconClasses}`}
       >
-        <Icon size={13} className={iconClasses} />
+        <Icon size={12} />
       </span>
-      <div className="flex flex-col leading-tight">
-        <span className="text-sm font-semibold text-slate-700">{count}</span>
-        <span className="text-[10px] text-slate-400">{label}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Results Access card ──────────────────────────────────────────────────
-// Renders one of three states based on the school-stat query. Kept in a
-// dedicated component so the tri-state logic doesn't clutter the main
-// layout above.
-function ResultsAccessCard({
-  stat,
-  isPending,
-}: {
-  stat: SchoolTermResultStat | null;
-  isPending: boolean;
-}) {
-  return (
-    <div className="rounded-2xl border border-indigo-100 bg-white p-5">
-      <div className="flex items-center gap-2">
-        <span className="w-6 h-6 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
-          <Lock size={11} className="text-amber-600" />
-        </span>
-        <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
-          Results Access
-        </div>
-      </div>
-
-      {isPending ? (
-        // Loading skeleton — mirror the populated shape below so the card
-        // height stays stable through the transition.
-        <div className="mt-3 space-y-2">
-          <div className="h-7 w-24 rounded bg-slate-100 animate-pulse" />
-          <div className="h-3 w-32 rounded bg-slate-100 animate-pulse" />
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <div className="h-8 rounded bg-slate-100 animate-pulse" />
-            <div className="h-8 rounded bg-slate-100 animate-pulse" />
-            <div className="h-8 rounded bg-slate-100 animate-pulse" />
-          </div>
-        </div>
-      ) : !stat ? (
-        // Endpoint returned data:null — no rollup row exists yet because no
-        // pin has ever been redeemed against this school/term/session.
-        <div className="mt-3">
-          <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-slate-800">0</span>
-            <span className="text-xs text-slate-400 mb-1">accesses</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2">
-            No result-access activity recorded for this term yet.
-          </p>
-        </div>
-      ) : (
-        // Populated — headline is the assessment-access count (a proxy for
-        // "how many students have had their result viewed"), with the two
-        // other counters below and the last-accessed timestamp beneath.
-        <div className="mt-3">
-          <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-slate-800">
-              {stat.assessments_accessed}
-            </span>
-            <span className="text-xs text-slate-400 mb-1">
-              student{stat.assessments_accessed === 1 ? "" : "s"} accessed
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <Stat
-              value={stat.total_accesses}
-              label="Total accesses"
-              valueClasses="text-violet-600"
-            />
-            <Stat
-              value={stat.total_unique_pins}
-              label="Pins used"
-              valueClasses="text-emerald-600"
-            />
-          </div>
-
-          <div className="mt-3 text-[10px] text-slate-400 leading-relaxed">
-            <span className="uppercase tracking-wide text-slate-400">
-              Last access
-            </span>
-            <span className="block text-[11px] text-slate-600 font-medium">
-              {formatDateTime(stat.last_accessed_at)}
-            </span>
-          </div>
-        </div>
-      )}
+      <span className="text-sm font-bold text-slate-800 tabular-nums leading-none">
+        {value}
+      </span>
+      <span className="text-[9px] text-slate-400 mt-1 truncate max-w-full">
+        {label}
+      </span>
     </div>
   );
 }

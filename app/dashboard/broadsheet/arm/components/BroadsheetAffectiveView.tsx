@@ -11,11 +11,10 @@
 // the label sits on `behaviour` (not `name`). We display that string in the
 // rotated column header.
 //
-// Rotated headers: rotation lives on an inner `<span className="inline-
-// block …">`, not on the `<th>`. Without the inner wrapper, Safari renders
-// `writing-mode: vertical-rl` + `rotate(180deg)` combinations with the
-// glyphs upside down; wrapping the text in an inline-block gives the
-// transform a stable origin that renders identically in Chromium and Safari.
+// Header labels render horizontally (left-to-right). Earlier versions
+// rotated them vertically to save column width; readability won out over
+// compactness and the wrapper already scrolls horizontally when the
+// resulting table gets wider than the viewport.
 //
 // Loading gate: shows a TableLoader while students / classResult queries
 // are still in flight (subjects isn't consumed here, but behaviours come
@@ -141,13 +140,13 @@ export default function BroadsheetAffectiveView({
               </th>
 
               {behaviours.map((b) => (
-                <RotatedHeader
+                <ColumnHeader
                   key={b.id}
                   colSpan={2}
                   extraClassName="border-l border-l-rose-300"
                 >
                   {b.behaviour}
-                </RotatedHeader>
+                </ColumnHeader>
               ))}
 
               {/* Summary columns — Total Obtainable and Position removed
@@ -161,13 +160,13 @@ export default function BroadsheetAffectiveView({
             <tr className="h-10 text-white bg-rose-800">
               {behaviours.map((b) => (
                 <Fragment key={`hdr2-${b.id}`}>
-                  <RotatedHeader
+                  <ColumnHeader
                     key={`${b.id}-score`}
                     extraClassName="border-l border-l-rose-300"
                   >
                     SCORE
-                  </RotatedHeader>
-                  <RotatedHeader key={`${b.id}-grade`}>GRADE</RotatedHeader>
+                  </ColumnHeader>
+                  <ColumnHeader key={`${b.id}-grade`}>GRADE</ColumnHeader>
                 </Fragment>
               ))}
             </tr>
@@ -269,9 +268,11 @@ export default function BroadsheetAffectiveView({
   );
 }
 
-// ── Rotated cell primitives ──────────────────────────────────────────────
+// ── Header / cell primitives ─────────────────────────────────────────────
+// Horizontal headers; helpers keep padding + border defaults consistent
+// across every header cell in the table.
 
-function RotatedHeader({
+function ColumnHeader({
   children,
   extraClassName = "",
   colSpan,
@@ -286,11 +287,9 @@ function RotatedHeader({
     <th
       colSpan={colSpan}
       rowSpan={rowSpan}
-      className={`px-2 py-2 text-center align-bottom ${extraClassName}`}
+      className={`px-2 py-2 text-center whitespace-nowrap ${extraClassName}`}
     >
-      <span className="inline-block [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">
-        {children}
-      </span>
+      {children}
     </th>
   );
 }
@@ -298,12 +297,10 @@ function RotatedHeader({
 function SummaryHeader({ children }: { children: React.ReactNode }) {
   return (
     <th
-      className="px-2 py-2 border-l border-l-rose-300 align-bottom lg:align-middle"
+      className="px-2 py-2 border-l border-l-rose-300 whitespace-nowrap"
       rowSpan={2}
     >
-      <span className="inline-block [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 whitespace-nowrap">
-        {children}
-      </span>
+      {children}
     </th>
   );
 }

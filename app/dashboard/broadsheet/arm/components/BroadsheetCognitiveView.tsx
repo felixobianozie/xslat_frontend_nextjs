@@ -11,14 +11,10 @@
 // Rendering choices:
 //   - The header is two-row: top row holds the subject name spanning all of
 //     its unit columns, the second row holds the unit abbreviations.
-//   - Long header text rotates via `writing-mode: vertical-rl` + rotate(180).
-//     The rotation and writing-mode classes live on an inner `<span
-//     className="inline-block …">` inside each `<th>` (not on the `<th>`
-//     itself). Reason: on Safari/WebKit, applying `writing-mode` and
-//     `transform: rotate(180deg)` directly to a `<th>` renders the glyphs
-//     upside down instead of bottom-to-top. Wrapping the text in an inline-
-//     block span gives the transform a stable inline layout box and the
-//     rendering matches Chromium.
+//   - Header labels render horizontally (left-to-right). Earlier versions
+//     rotated them vertically to conserve column width, but readability
+//     won out over compactness — the outer wrapper scrolls horizontally
+//     when the resulting table gets wider than the viewport.
 //   - The outer wrapper scrolls in both axes inside a capped max-height, and
 //     carries a small bottom-spacer div so the horizontal scrollbar doesn't
 //     obscure the last data row.
@@ -179,23 +175,23 @@ export default function BroadsheetCognitiveView({
               >
                 ID
               </th>
-              <RotatedHeader
+              <ColumnHeader
                 extraClassName="border-l border-l-indigo-300"
                 rowSpan={2}
               >
                 SEX
-              </RotatedHeader>
+              </ColumnHeader>
 
               {/* Subject group headers — span all of the subject's units +
                   TOTAL + GRADE. */}
               {orderedSubjects.map((subject) => (
-                <RotatedHeader
+                <ColumnHeader
                   key={subject.id}
                   colSpan={units.length + 2}
                   extraClassName="border-l border-l-indigo-300"
                 >
                   {subject.definition.name}
-                </RotatedHeader>
+                </ColumnHeader>
               ))}
 
               {/* Summary columns — rotated on md-, horizontal on lg+. */}
@@ -213,21 +209,17 @@ export default function BroadsheetCognitiveView({
               {orderedSubjects.map((subject) => (
                 <Fragment key={`hdr2-${subject.id}`}>
                   {units.map((unit, idx) => (
-                    <RotatedHeader
+                    <ColumnHeader
                       key={`${subject.id}-${unit.id}`}
                       extraClassName={
                         idx === 0 ? "border-l border-l-indigo-300" : ""
                       }
                     >
                       {unit.abbr}
-                    </RotatedHeader>
+                    </ColumnHeader>
                   ))}
-                  <RotatedHeader key={`${subject.id}-total`}>
-                    TOTAL
-                  </RotatedHeader>
-                  <RotatedHeader key={`${subject.id}-grade`}>
-                    GRADE
-                  </RotatedHeader>
+                  <ColumnHeader key={`${subject.id}-total`}>TOTAL</ColumnHeader>
+                  <ColumnHeader key={`${subject.id}-grade`}>GRADE</ColumnHeader>
                 </Fragment>
               ))}
             </tr>
@@ -397,13 +389,14 @@ export default function BroadsheetCognitiveView({
   );
 }
 
-// ── Rotated cell primitives ──────────────────────────────────────────────
-// See file header for the rationale behind wrapping the rotated text in an
-// inner inline-block span rather than rotating the `<th>` directly.
+// ── Header / cell primitives ─────────────────────────────────────────────
+// Header cells render horizontally now. These helpers keep the JSX above
+// skim-readable and centralise padding / border defaults so any future
+// styling tweak lands in one place per file.
 
-// Base rotated column header — vertical writing mode, rotated 180deg.
-// Used for the SEX corner cell and the subject / unit labels.
-function RotatedHeader({
+// Column header — plain horizontal text. Used for the SEX corner cell and
+// the subject / unit labels in both header rows.
+function ColumnHeader({
   children,
   extraClassName = "",
   colSpan,
@@ -418,27 +411,22 @@ function RotatedHeader({
     <th
       colSpan={colSpan}
       rowSpan={rowSpan}
-      className={`px-2 py-2 text-center align-bottom ${extraClassName}`}
+      className={`px-2 py-2 text-center whitespace-nowrap ${extraClassName}`}
     >
-      <span className="inline-block [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">
-        {children}
-      </span>
+      {children}
     </th>
   );
 }
 
-// Summary column header — rotated on md- and horizontal on lg+ where we
-// have room. The responsive switch lives on the inner span so Safari
-// respects the transform origin.
+// Summary column header — horizontal text with the same border treatment
+// as the summary body cells beneath it.
 function SummaryHeader({ children }: { children: React.ReactNode }) {
   return (
     <th
-      className="px-2 py-2 border-l border-l-indigo-300 align-bottom lg:align-middle"
+      className="px-2 py-2 border-l border-l-indigo-300 whitespace-nowrap"
       rowSpan={2}
     >
-      <span className="inline-block [writing-mode:vertical-rl] rotate-180 lg:[writing-mode:horizontal-tb] lg:rotate-0 whitespace-nowrap">
-        {children}
-      </span>
+      {children}
     </th>
   );
 }

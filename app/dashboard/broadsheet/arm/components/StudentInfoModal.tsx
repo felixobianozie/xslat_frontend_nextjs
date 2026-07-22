@@ -23,7 +23,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Lock, X } from "lucide-react";
+import { Award, BarChart3, Lock, MessageSquare, X } from "lucide-react";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../../components/Buttonloader";
@@ -260,22 +260,10 @@ function PerformanceBody({
         />
       </Section>
 
-      {(studentResult.teachers_remark || studentResult.supervisors_remark) && (
-        <Section title="Comments">
-          {studentResult.teachers_remark && (
-            <Comment
-              label="Class Teacher's Comment"
-              body={studentResult.teachers_remark}
-            />
-          )}
-          {studentResult.supervisors_remark && (
-            <Comment
-              label="Administrator's Comment"
-              body={studentResult.supervisors_remark}
-            />
-          )}
-        </Section>
-      )}
+      {/* Teacher / principal remarks — performance-variant only. The
+          Access variant is scoped to pin-usage analytics and student
+          identity, so it doesn't surface these. */}
+      <CommentsSection studentResult={studentResult} />
     </>
   );
 }
@@ -424,13 +412,85 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function Comment({ label, body }: { label: string; body: string }) {
+// ── CommentsSection ─────────────────────────────────────────────────────────
+// Renders at the bottom of both variants. Two cards, one per remark author,
+// each with a coloured icon pill, an uppercase label, and the remark body
+// in quotation marks. When a remark is missing, its card falls back to a
+// muted italic placeholder so the section keeps its expected shape rather
+// than jumping around depending on which remarks happen to be recorded.
+//
+// Silently omitted when studentResult is undefined — no compute row means
+// no remarks to show, and rendering two empty cards in that case would
+// look like a bug.
+function CommentsSection({
+  studentResult,
+}: {
+  studentResult: StudentAssessmentResult | undefined;
+}) {
+  if (!studentResult) return null;
+
   return (
-    <div className="px-3 py-2.5">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
-        {label}
+    <div>
+      <h3 className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-2">
+        Comments
+      </h3>
+      <div className="flex flex-col gap-2">
+        <CommentCard
+          Icon={MessageSquare}
+          iconClasses="text-violet-600 bg-violet-50"
+          author="Teacher's Comment"
+          body={studentResult.teachers_remark}
+        />
+        <CommentCard
+          Icon={Award}
+          iconClasses="text-emerald-600 bg-emerald-50"
+          author="Principal's Comment"
+          body={studentResult.supervisors_remark}
+        />
       </div>
-      <p className="text-xs text-slate-700 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+// ── CommentCard ─────────────────────────────────────────────────────────────
+// Single remark tile: coloured icon on the left, author label + quote body
+// on the right. `body` is optional — the empty case renders a muted italic
+// placeholder rather than collapsing the card, so the two remarks always
+// occupy the same footprint in the modal.
+function CommentCard({
+  Icon,
+  iconClasses,
+  author,
+  body,
+}: {
+  Icon: typeof MessageSquare;
+  iconClasses: string;
+  author: string;
+  body?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-start gap-2.5">
+        <span
+          className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${iconClasses}`}
+        >
+          <Icon size={14} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+            {author}
+          </div>
+          {body ? (
+            <p className="text-xs text-slate-700 leading-relaxed">
+              &ldquo;{body}&rdquo;
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-400 italic">
+              No comment recorded.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

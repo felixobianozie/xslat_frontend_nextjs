@@ -47,8 +47,12 @@ import {
   CalendarClock,
   CalendarRange,
   ChevronDown,
+  Eye,
   Globe,
+  KeyRound,
+  Lock,
   Search,
+  Users,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -62,6 +66,25 @@ import BroadsheetAdminActionModal, {
 } from "./BroadsheetAdminActionModal";
 import BroadsheetPublishModal from "./BroadsheetPublishModal";
 import type { ApiEnvelope, CurrentTerm } from "../page";
+
+// ── Types ────────────────────────────────────────────────────────────────
+// Shape returned by GET pins/stats/school/ when a SchoolTermResultStat row
+// exists for the given (school, term, session) triple. The endpoint
+// returns `data: null` when there's no row yet — no pin activity has
+// been recorded — so consumers treat the stat as nullable throughout.
+// Declared locally here because this is the only page that reads it; a
+// prior copy lived on the broadsheet detail-page provider and moved with
+// the analytics card.
+interface SchoolTermResultStat {
+  id: string;
+  school: { id: string; name: string; abbr?: string };
+  term: { id: string; name: string };
+  session: { id: string; name: string };
+  total_unique_pins: number;
+  total_accesses: number;
+  assessments_accessed: number;
+  last_accessed_at: string | null;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -137,6 +160,35 @@ export default function BroadsheetsList({
       initialDataUpdatedAt: initialArms ? Date.now() : undefined,
     },
   );
+
+  // ── React Query: school pin-usage rollup ─────────────────────────────────
+  // GET pins/stats/school/ returns a SchoolTermResultStat row per (school,
+  // term, session) triple. All three ids come from props/env, so the query
+  // fires immediately. The endpoint returns `data: null` — not an error —
+  // when no pin activity has been recorded yet, which the Results Access
+  // card below renders as an empty-state row rather than a spinner.
+  const { data: schoolAccessStatData, isPending: schoolAccessStatPending } =
+    useQuery<ApiEnvelope<SchoolTermResultStat | null>>({
+      queryKey: [
+        "broadsheet-school-access-stat",
+        SCHOOL_ID,
+        currentTerm.id,
+        currentTerm.session.id,
+      ],
+      queryFn: async () => {
+        const url =
+          `pins/stats/school/?school-id=${SCHOOL_ID}` +
+          `&term-id=${currentTerm.id}` +
+          `&session-id=${currentTerm.session.id}`;
+        const { data, error } =
+          await clientAuthFetch<ApiEnvelope<SchoolTermResultStat | null>>(url);
+        if (error) throw new Error(error.message);
+        return data!;
+      },
+      refetchOnWindowFocus: false,
+    });
+
+  const schoolAccessStat = schoolAccessStatData?.data ?? null;
 
   // Surface fetch errors via toast so the user knows the list didn't load.
   useEffect(() => {
@@ -219,17 +271,25 @@ export default function BroadsheetsList({
         />
       </div>
 
-      {/* ── Term-level progress strip ───────────────────────────────────────
-          Shows how the term's broadsheet approvals are progressing so the
-          admin knows whether the term is ready for publishing. Publishing
-          itself is a manual action — see the Publish Results button below. */}
-      <TermProgressStrip
-        approved={termStats.approved}
-        pending={termStats.pending}
-        total={termStats.total}
-        allApproved={termStats.allApproved}
-        isPending={isPending}
-      />
+      {/* ── Top status row — progress + access analytics ─────────────────
+          Two side-by-side cards at md+: on the left the arm-approval
+          progress strip; on the right the school/term/session pin-usage
+          rollup. On narrow viewports they stack. `align-items: stretch`
+          (grid's default) keeps both cards the same height regardless of
+          which side has slightly more content. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <TermProgressStrip
+          approved={termStats.approved}
+          pending={termStats.pending}
+          total={termStats.total}
+          allApproved={termStats.allApproved}
+          isPending={isPending}
+        />
+        <SchoolAccessCard
+          stat={schoolAccessStat}
+          isPending={schoolAccessStatPending}
+        />
+      </div>
 
       {/* ── Toolbar ─ Search + Publish ─────────────────────────────────────
           Search stacks above Publish on mobile and sits inline on sm+. */}
@@ -473,7 +533,7 @@ function TermProgressStrip({
 }) {
   if (isPending) {
     return (
-      <div className="mb-6 h-16 rounded-2xl bg-slate-50 border border-slate-100 animate-pulse" />
+      <div className="min-h-24 rounded-2xl bg-slate-50 border border-slate-100 animate-pulse" />
     );
   }
 
@@ -507,30 +567,33 @@ function TermProgressStrip({
   const progressPercent = total === 0 ? 0 : (approved / total) * 100;
 
   return (
-    <div className="mb-6 rounded-2xl border border-indigo-100 bg-white p-4 sm:p-5 shadow-sm">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
-            Term Approval Progress
-          </p>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${readiness.classes}`}
-            >
-              {readiness.label}
-            </span>
-            <span className="text-[11px] text-slate-500">
-              {approved} of {total} arm{total === 1 ? "" : "s"} approved
-              {pending > 0 ? ` · ${pending} pending` : ""}
-            </span>
-          </div>
-        </div>
-        <p className="text-[10px] text-slate-400 sm:text-right max-w-xs">
-          Approve every arm, then click Publish Results to finalise the term.
-        </p>
+    <div className="rounded-2xl border border-indigo-100 bg-white p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-3">
+      {/* Title — pinned to the top of the card by justify-between placing
+          the first flex item at the start of the main axis. */}
+      <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+        Term Approval Progress
+      </p>
+
+      {/* Status — readiness pill and count summary. Sits vertically
+          centered between the title above and the progress bar below
+          when the grid stretches this card to match its sibling. With
+          three items and justify-between, the two remaining gaps are
+          equal, so the middle item lands centered by construction. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${readiness.classes}`}
+        >
+          {readiness.label}
+        </span>
+        <span className="text-[11px] text-slate-500">
+          {approved} of {total} arm{total === 1 ? "" : "s"} approved
+          {pending > 0 ? ` · ${pending} pending` : ""}
+        </span>
       </div>
 
-      {/* Progress bar — visualises approved share of total. */}
+      {/* Progress bar — anchored at the bottom of the card by
+          justify-between placing the last flex item at the end of the
+          main axis. Visualises approved share of total. */}
       <div
         className="h-1.5 rounded-full bg-slate-100 overflow-hidden"
         role="progressbar"
@@ -547,4 +610,153 @@ function TermProgressStrip({
       </div>
     </div>
   );
+}
+
+// ── SchoolAccessCard ─────────────────────────────────────────────────────────
+// Compact school/term/session pin-usage rollup card. Renders next to the
+// TermProgressStrip so it needs to hit roughly the same content height —
+// header row + one row of compact stats — to keep the two cards visually
+// balanced in their side-by-side grid.
+//
+// States:
+//   - loading   → skeleton bars in the stat slots
+//   - populated → three coloured icon pills for students accessed, total
+//                 accesses, unique pins used; last-accessed timestamp in
+//                 the header.
+//
+// The endpoint returns `data: null` when no pin activity has been recorded
+// for the (school, term, session) triple yet — a valid response, not an
+// error. In that case the three pills still render, all reading zero,
+// which matches the always-populated shape of the sibling TermProgressStrip
+// (readiness pill + counts) and reads more naturally than a separate empty
+// placeholder. The header's last-accessed timestamp is suppressed in the
+// null case so the header doesn't reference a date that isn't there.
+function SchoolAccessCard({
+  stat,
+  isPending,
+}: {
+  stat: SchoolTermResultStat | null;
+  isPending: boolean;
+}) {
+  // Fallback to zeros when the endpoint returned data:null. Hoisted so the
+  // JSX below reads clean and the label pluralisation only checks one
+  // resolved number rather than an inline ?? chain per pill.
+  const studentsAccessed = stat?.assessments_accessed ?? 0;
+  const totalAccesses = stat?.total_accesses ?? 0;
+  const uniquePins = stat?.total_unique_pins ?? 0;
+
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-white p-4 sm:p-5 shadow-sm">
+      {/* Header row — title on the left, last-accessed timestamp on the
+          right (only when there's a stat to reference; suppressed in the
+          loading and null states to avoid a placeholder "—" that reads
+          like a bug). */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+            <Lock size={11} className="text-amber-600" />
+          </span>
+          <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+            Results Access
+          </p>
+        </div>
+        {stat && (
+          <p className="text-[10px] text-slate-400 sm:text-right">
+            <span className="uppercase tracking-wide">Last access</span>
+            <span className="block text-[11px] text-slate-600 font-medium">
+              {formatAccessTime(stat.last_accessed_at)}
+            </span>
+          </p>
+        )}
+      </div>
+
+      {isPending ? (
+        // Loading skeleton — three pulse bars matching the AccessMetricPill
+        // footprint (icon pill + two-line text stack) so the card height
+        // stays stable through the transition.
+        <div className="grid grid-cols-3 gap-2">
+          <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
+          <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
+          <div className="h-12 rounded-xl bg-slate-100 animate-pulse" />
+        </div>
+      ) : (
+        // Populated — three coloured icon pills. `assessments_accessed`
+        // reads as "students whose result was viewed", `total_accesses`
+        // as raw redemption count (repeat views count), `total_unique_pins`
+        // as the number of distinct pins that have been issued and used.
+        // Amber on the pins tile intentionally echoes the amber Lock in
+        // the card header so the accent colour threads through the card.
+        <div className="grid grid-cols-3 gap-2">
+          <AccessMetricPill
+            Icon={Users}
+            iconClasses="text-violet-600 bg-violet-50"
+            value={studentsAccessed}
+            label={`Student${studentsAccessed === 1 ? "" : "s"}`}
+          />
+          <AccessMetricPill
+            Icon={Eye}
+            iconClasses="text-blue-600 bg-blue-50"
+            value={totalAccesses}
+            label={`Access${totalAccesses === 1 ? "" : "es"}`}
+          />
+          <AccessMetricPill
+            Icon={KeyRound}
+            iconClasses="text-amber-600 bg-amber-50"
+            value={uniquePins}
+            label={`Pin${uniquePins === 1 ? "" : "s"}`}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── AccessMetricPill ────────────────────────────────────────────────────────
+// Horizontal icon-left tile used inside SchoolAccessCard: coloured icon
+// pill on the left, bold value + muted label stacked on the right. Same
+// visual language as the metric tiles on the Broadsheet Arm Detail page,
+// so the two cards read as siblings rather than one plain and one styled.
+// Kept file-local; if this pattern lands on a third card later, worth
+// promoting to a shared component.
+function AccessMetricPill({
+  Icon,
+  iconClasses,
+  value,
+  label,
+}: {
+  Icon: typeof Users;
+  iconClasses: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 p-2 rounded-xl border border-slate-100 bg-slate-50/50">
+      <span
+        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${iconClasses}`}
+      >
+        <Icon size={14} />
+      </span>
+      <div className="flex flex-col leading-tight min-w-0">
+        <span className="text-base font-bold text-slate-800 tabular-nums">
+          {value}
+        </span>
+        <span className="text-[10px] text-slate-400 truncate">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Format an ISO datetime for the "last accessed" line. Returns "—" for
+// null / invalid input so callers don't need to null-check.
+function formatAccessTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

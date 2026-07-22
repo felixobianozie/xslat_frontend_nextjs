@@ -18,6 +18,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useArmDetails } from "../context/Armdetailsprovider";
+import TableLoader from "../../components/Tableloader";
 import ResultsAcademicsView from "./Resultsacademicsview";
 import ResultsTraitsGridView from "./Resultstraitsgridview";
 import ResultsGeneralView from "./Resultsgeneralview";
@@ -31,6 +32,11 @@ interface ResultsDetailPaneProps {
   classResult: ClassAssessmentResult;
   // Currently active filter view.
   filter: ResultsFilterKey;
+  // True while the class-assessment-compute query is still pending. Combined
+  // with the arm-detail pending flag (read from context) to decide whether
+  // the filter-specific view below the summary card should render a loader
+  // instead of the child view's "not configured" / "no records" empty state.
+  classResultLoading: boolean;
   // Mobile back action — caller controls whether to show the back link.
   onBack: () => void;
   // Prev / Next selection — caller decides which student becomes active.
@@ -46,12 +52,20 @@ export default function ResultsDetailPane({
   allStudents,
   classResult,
   filter,
+  classResultLoading,
   onBack,
   onSelect,
 }: ResultsDetailPaneProps) {
-  const { arm } = useArmDetails();
+  const { arm, isPending: armLoading } = useArmDetails();
 
   const studentResult = classResult.students[student.id];
+
+  // Both the arm detail (which supplies assessment + grading formats) and the
+  // compute payload (which supplies per-student scores) must be present before
+  // the filter-specific views can distinguish "no data yet" from "not
+  // configured". While either is loading we show a loader in place of the
+  // child view so the user isn't briefly told the format is missing.
+  const filterViewLoading = armLoading || classResultLoading;
 
   // Compute Prev / Next neighbours from the master list. Edges clamp.
   const currentIndex = allStudents.findIndex((s) => s.id === student.id);
@@ -134,37 +148,51 @@ export default function ResultsDetailPane({
         gradingSummary={studentResult?.grading_summary}
       />
 
-      {/* ── Filter-specific view ────────────────────────────────────── */}
-      {filter === "ACADEMICS" && (
-        <ResultsAcademicsView
-          student={student}
-          studentResult={studentResult}
-          units={arm?.cognitive_assessment_format?.units}
-        />
-      )}
+      {/* ── Filter-specific view ──────────────────────────────────────
+          While the arm-detail or compute query is still pending, render a
+          loader instead of the actual view. Without this gate the child
+          views can't tell the difference between "loading" and "genuinely
+          unavailable", so they briefly flash empty states like "Cognitive
+          format not configured" before the data lands. */}
+      {filterViewLoading ? (
+        <TableLoader rows={6} />
+      ) : (
+        <>
+          {filter === "ACADEMICS" && (
+            <ResultsAcademicsView
+              student={student}
+              studentResult={studentResult}
+              units={arm?.cognitive_assessment_format?.units}
+            />
+          )}
 
-      {filter === "BEHAVIOURS" && (
-        <ResultsTraitsGridView
-          kind="affective"
-          student={student}
-          traits={arm?.affective_assessment_format?.behaviours ?? []}
-          gradingFormat={arm?.aff_grading_format}
-          existingResults={studentResult?.behaviours ?? {}}
-        />
-      )}
+          {filter === "BEHAVIOURS" && (
+            <ResultsTraitsGridView
+              kind="affective"
+              student={student}
+              traits={arm?.affective_assessment_format?.behaviours ?? []}
+              gradingFormat={arm?.aff_grading_format}
+              existingResults={studentResult?.behaviours ?? {}}
+            />
+          )}
 
-      {filter === "SKILLS" && (
-        <ResultsTraitsGridView
-          kind="psychomotor"
-          student={student}
-          traits={arm?.psychomotor_assessment_format?.activities ?? []}
-          gradingFormat={arm?.psy_grading_format}
-          existingResults={studentResult?.skills ?? {}}
-        />
-      )}
+          {filter === "SKILLS" && (
+            <ResultsTraitsGridView
+              kind="psychomotor"
+              student={student}
+              traits={arm?.psychomotor_assessment_format?.activities ?? []}
+              gradingFormat={arm?.psy_grading_format}
+              existingResults={studentResult?.skills ?? {}}
+            />
+          )}
 
-      {filter === "GENERAL" && (
-        <ResultsGeneralView student={student} studentResult={studentResult} />
+          {filter === "GENERAL" && (
+            <ResultsGeneralView
+              student={student}
+              studentResult={studentResult}
+            />
+          )}
+        </>
       )}
 
       {/* ── Bottom prev/next nav ──────────────────────────────────────────
@@ -311,28 +339,47 @@ function SummaryCard({
           compute payload). */}
       {(gender || hasTotal || hasGradingSummary) && (
         <div className="flex flex-col md:flex-row gap-2.5">
-          {gender !== undefined && (
-            <Stat
-              label="Gender"
-              value={formatGender(gender)}
-              // Narrow on desktop so it doesn't fight the pills for width.
-              className="md:w-40 md:shrink-0"
-            />
-          )}
-          {hasTotal && (
-            <Stat
-              label="Total"
-              // Include the obtainable when the backend provides it — the
-              // "score / max" format mirrors how Position surfaces its
-              // denominator context. Fall back to just the score if the
-              // obtainable is missing so the card never renders "n / undefined".
-              value={
-                totalObtainable !== undefined
-                  ? `${totalScore} / ${totalObtainable}`
-                  : String(totalScore)
-              }
-              className="md:w-40 md:shrink-0"
-            />
+          {/* Gender + Total pair.
+              Mobile: a 2-col grid so the two cards sit side by side,
+              matching the Position / Decision rhythm in the primary row
+              above. A lone card (when only one of the two is present)
+              spans both columns via col-span-2 so it doesn't leave an
+              empty cell.
+              Desktop: `md:contents` dissolves this wrapper so Gender and
+              Total become direct children of the outer flex row and keep
+              their fixed 160px widths — desktop layout is unchanged. */}
+          {(gender !== undefined || hasTotal) && (
+            <div className="grid grid-cols-2 gap-2.5 md:contents">
+              {gender !== undefined && (
+                <Stat
+                  label="Gender"
+                  value={formatGender(gender)}
+                  // Narrow on desktop so it doesn't fight the pills for width.
+                  // Full width on mobile only when Total is absent — otherwise
+                  // it shares the row with Total.
+                  className={`md:w-40 md:shrink-0 ${
+                    !hasTotal ? "col-span-2 md:col-span-1" : ""
+                  }`}
+                />
+              )}
+              {hasTotal && (
+                <Stat
+                  label="Total"
+                  // Include the obtainable when the backend provides it — the
+                  // "score / max" format mirrors how Position surfaces its
+                  // denominator context. Fall back to just the score if the
+                  // obtainable is missing so the card never renders "n / undefined".
+                  value={
+                    totalObtainable !== undefined
+                      ? `${totalScore} / ${totalObtainable}`
+                      : String(totalScore)
+                  }
+                  className={`md:w-40 md:shrink-0 ${
+                    gender === undefined ? "col-span-2 md:col-span-1" : ""
+                  }`}
+                />
+              )}
+            </div>
           )}
           {hasGradingSummary && (
             <div className="flex-1 border border-slate-200 rounded-xl bg-white px-3 py-2.5">

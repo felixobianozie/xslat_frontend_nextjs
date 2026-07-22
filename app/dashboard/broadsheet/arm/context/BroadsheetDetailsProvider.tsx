@@ -5,22 +5,26 @@
 //
 // Provides every component on the /dashboard/broadsheet/arm page with the
 // data it needs — the arm record itself, the student roster, the subjects
-// list, the computed class assessment aggregates, and the school/term/session
-// pin-usage rollup. All children read the value via the `useBroadsheetDetails`
-// hook (exported from this same file).
+// list, and the computed class assessment aggregates. All children read the
+// value via the `useBroadsheetDetails` hook (exported from this same file).
 //
 // Data layer:
-//   Five React Query queries hit the real backend via clientAuthFetch:
+//   Four React Query queries hit the real backend via clientAuthFetch:
 //     1. GET arm/detail/?id=<armId>&school-id=…              → the arm record
 //     2. GET student/list/?school-id=…&arm-id=<armId>&…      → the roster
 //     3. GET subject/list/?school-id=…&term-id=…&arm=<armId> → subjects offered
 //     4. GET arm/assessment/compute/?school-id=…&arm-id=…    → class aggregates
-//     5. GET pins/stats/school/?school-id=…&term-id=…&…      → pin usage rollup
 //
 //   Queries (1), (2), and (4) fire in parallel — armId is available on mount.
-//   Queries (3) and (5) are chained: (3) needs term-id, (5) needs term-id +
-//   session-id — both live on arm.level.section.term chain and can't resolve
-//   until (1) lands.
+//   Query (3) is chained: it needs term-id from the arm chain (arm.level
+//   .section.term.id), so it waits for (1) to resolve.
+//
+// Note on school-level pin usage analytics:
+//   The pins/stats/school/ endpoint was previously fetched here to power a
+//   Results Access card on the detail page. That card has moved to the
+//   Broadsheet Arms *list* page, since school/term/session analytics are
+//   scoped to the whole term rather than to a single arm — see
+//   BroadsheetsList.tsx for the new home.
 //
 // Secondary loading flags are exported so views can distinguish between
 // "the arm is loaded, keep showing the page" (isPending=false) and "the
@@ -60,30 +64,12 @@ export interface PaginatedResponse<T> {
   data: T[];
 }
 
-// ── Pin-usage rollup type ────────────────────────────────────────────────────
-// Shape returned by GET pins/stats/school/ when the SchoolTermResultStat row
-// exists. The nested school/term/session objects are limited to id + basic
-// display fields via the include_*_fields context set by the view.
-//
-// The endpoint returns `data: null` when no pin activity has been recorded
-// for the (school, term, session) triple yet, so the provider treats the
-// stat as nullable throughout.
-
-export interface SchoolTermResultStat {
-  id: string;
-  school: { id: string; name: string; abbr?: string };
-  term: { id: string; name: string };
-  session: { id: string; name: string };
-  total_unique_pins: number;
-  total_accesses: number;
-  assessments_accessed: number;
-  last_accessed_at: string | null;
-}
-
 // ── Context value ────────────────────────────────────────────────────────────
-// Additive-only from the previous version: same fields as before, plus the
-// three secondary-pending flags and the schoolAccessStat pair. Existing
-// consumers keep working without modification.
+// Same shape as the previous version minus the school-level pin analytics
+// pair (schoolAccessStat + schoolAccessStatPending), which moved to the
+// arms list page. Existing consumers keep working — the fields they read
+// (arm/students/subjects/classResult + secondary pending flags) are all
+// still here.
 
 export interface BroadsheetDetailsContextValue {
   armId: string;
@@ -91,11 +77,6 @@ export interface BroadsheetDetailsContextValue {
   students: ArmStudent[];
   subjects: ArmSubject[];
   classResult: ClassAssessmentResult;
-
-  // School/term/session pin-usage rollup for this arm's term chain. `null`
-  // either while the query is still pending or when no pin activity has
-  // been recorded yet (the endpoint's "no row" case).
-  schoolAccessStat: SchoolTermResultStat | null;
 
   // Top-level page loading — driven by the arm query specifically. Kept as
   // the primary "should the page show a table skeleton" signal.
@@ -110,7 +91,6 @@ export interface BroadsheetDetailsContextValue {
   studentsPending: boolean;
   subjectsPending: boolean;
   classResultPending: boolean;
-  schoolAccessStatPending: boolean;
 }
 
 const BroadsheetDetailsContext =
@@ -145,11 +125,10 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
-  // Term + session are both needed by chained queries (subjects, school stat).
-  // Empty strings when the arm hasn't loaded yet keep the enabled gates simple.
+  // Term id is derived from the arm chain for the chained subjects query.
+  // Empty string when the arm hasn't loaded yet keeps the enabled gate simple.
   const arm = armData?.data ?? null;
   const termId = arm?.level.section.term?.id ?? "";
-  const sessionId = arm?.level.section.term?.session?.id ?? "";
 
   // ── Query 2: student roster ─────────────────────────────────────────────
   const { data: studentsData, isPending: studentsPending } = useQuery<
@@ -202,27 +181,6 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
-  // ── Query 5: school/term/session pin usage rollup ───────────────────────
-  // Chained on term + session (both derived from the arm chain). The endpoint
-  // returns `data: null` when no pin activity has been recorded yet — that's
-  // a valid response, not an error, so we don't throw on it.
-  const { data: schoolAccessStatData, isPending: schoolAccessStatPending } =
-    useQuery<ApiEnvelope<SchoolTermResultStat | null>>({
-      queryKey: ["broadsheet-school-access-stat", SCHOOL_ID, termId, sessionId],
-      queryFn: async () => {
-        const url =
-          `pins/stats/school/?school-id=${SCHOOL_ID}` +
-          `&term-id=${termId}` +
-          `&session-id=${sessionId}`;
-        const { data, error } =
-          await clientAuthFetch<ApiEnvelope<SchoolTermResultStat | null>>(url);
-        if (error) throw new Error(error.message);
-        return data!;
-      },
-      enabled: !!termId && !!sessionId,
-      refetchOnWindowFocus: false,
-    });
-
   // Surface only the arm error to the user — the other queries silently fall
   // back to empty/null shapes, which downstream views handle gracefully.
   useEffect(() => {
@@ -238,7 +196,6 @@ export function BroadsheetDetailsProvider({
   // ── Derived values ─────────────────────────────────────────────────────
   const students = studentsData?.data ?? [];
   const subjects = subjectsData?.data ?? [];
-  const schoolAccessStat = schoolAccessStatData?.data ?? null;
 
   // Fallback keeps downstream consumers strictly-typed as ClassAssessmentResult
   // while the query is pending or errored.
@@ -258,14 +215,12 @@ export function BroadsheetDetailsProvider({
     students,
     subjects,
     classResult,
-    schoolAccessStat,
     isPending,
     isError: armIsError,
     error: armError,
     studentsPending,
     subjectsPending,
     classResultPending,
-    schoolAccessStatPending,
   };
 
   return (

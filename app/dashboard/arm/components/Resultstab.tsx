@@ -263,6 +263,7 @@ export default function ResultsTab() {
                 student={selectedStudent}
                 allStudents={students}
                 classResult={classResult}
+                classResultLoading={classResultPending}
                 filter={filter}
                 onBack={() => setSelectedStudentId(null)}
                 onSelect={(s) => setSelectedStudentId(s.id)}
