@@ -76,6 +76,12 @@ export default function BroadsheetCognitiveView({
     );
   }, [subjects]);
 
+  // Total obtainable score per subject — sum of every unit's max_score.
+  const subjectMaxScore = useMemo(
+    () => units.reduce((sum, u) => sum + u.max_score, 0),
+    [units],
+  );
+
   // Filter students by the parent's search box. We match on name and the
   // public_id so admins can look up either way.
   const visibleStudents = useMemo(() => {
@@ -235,6 +241,14 @@ export default function BroadsheetCognitiveView({
                 return tally;
               })();
 
+              const totalObtained = studentResult
+                ? Object.values(studentResult.subjects).reduce(
+                    (sum, s) => sum + s.total,
+                    0,
+                  )
+                : 0;
+              const totalObtainable = subjectMaxScore * orderedSubjects.length;
+
               return (
                 <tr
                   key={student.id}
@@ -319,16 +333,13 @@ export default function BroadsheetCognitiveView({
                   })}
 
                   {/* Summary cells */}
-                  {/* Subjects Taken reads the backend's per-student
-                      `subject_count` (arm-offered subjects minus the
-                      student's exclusions) */}
-                  <SummaryCell>{studentResult?.subject_count ?? 0}</SummaryCell>
-                  {/* Overall Total and Total Obtainable both come straight
-                      from the backend compute payload. */}
-                  <SummaryCell>{studentResult?.total_score ?? 0}</SummaryCell>
                   <SummaryCell>
-                    {studentResult?.total_score_obtainable ?? 0}
+                    {studentResult
+                      ? Object.keys(studentResult.subjects).length
+                      : 0}
                   </SummaryCell>
+                  <SummaryCell>{totalObtained}</SummaryCell>
+                  <SummaryCell>{totalObtainable}</SummaryCell>
                   <SummaryCell>
                     {studentResult?.average.toFixed(2) ?? "—"}
                   </SummaryCell>

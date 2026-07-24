@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terminal Report — Template 2 (Senior Secondary) — Preview</title>
+
+  <!--
+    Terminal Report — Template 2 (Senior Secondary School)
+
+    Templates:
+      - Template 1: Junior Secondary. Indigo accent scheme.
+      - Template 2 (this file): Senior Secondary.
+
+    Differences from Template 1:
+      - Violet accent scheme (in place of indigo) — a deeper, more
+        purple-leaning tone. Chosen so it prints as a distinctly
+        different grey shade in black-and-white, without clashing with
+        the rose (fails) or emerald (PASS decision) colours.
+      - "Position" field removed from Student Information. Date Issued
+        widened (col-span-2) to close the resulting gap.
+      - Grade Summary moved out of the Cognitive table footer and up into
+        its own full-width band directly under the summary strip
+        (Student Average / Class Average / Total Score / Decision). Uses
+        rounded corners.
+      - Footer "Ref" identifier removed.
+      - Header class value uses SS notation ("SS 2 A") instead of JSS.
+
+    Preview mockup for the student terminal report template (v2).
+
+    Notes:
+      - Tailwind CDN so this file opens directly in a browser for review.
+        Final React component will use the project's normal Tailwind pipeline.
+      - Mock data mirrors the actual backend shapes documented in results.d.ts
+        (StudentAssessmentResult / TraitAssessmentResult) and arm.d.ts
+        (ArmCogAssessmentUnit, ArmGradingFormat …), so swapping the mock for
+        live props during the real implementation is a mechanical change.
+      - Layout is fixed to A4 portrait (210mm x 297mm) and prints edge-to-edge.
+
+    v2 changes vs v1:
+      - Assessment sections stacked vertically: Cognitive → Behaviour → Skills.
+      - Removed per-subject Class Avg and Position columns from Cognitive table.
+      - Overall Position rendered as a simple value next to No. in Class.
+      - Removed "Next Term Begins" field.
+      - "Teacher's Signature" per-row column renamed to "Teacher ID".
+      - Grade legends moved to the bottom, below teacher/principal comments,
+        rendered as three cards in the same style as GradingSystemTab.
+      - Removed Signature / Date / Stamp placeholders from remarks cards.
+      - Grade Summary placed directly under the Cognitive totals row.
+      - Totals row now shows a value only in the Total column; other cells blank.
+  -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /*
+      The only non-Tailwind styles here are things Tailwind cannot reasonably
+      express: exact A4 page sizing, print media configuration, and the
+      system sans-serif font stack. Everything else is pure Tailwind
+      utilities.
+    */
+
+    /* Print setup: exact A4 portrait, no browser default margins. */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    html, body {
+      background: #E2E8F0; /* slate-200 — only visible in on-screen preview */
+    }
+
+    /* The physical page. */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+    }
+
+    /*
+      System font stack used throughout the report — no web fonts, so the
+      document renders identically (and prints identically) across browsers
+      and operating systems with zero load dependency.
+    */
+    body, .font-serif-title {
+      font-family: Arial, "Inter", Helvetica, sans-serif;
+    }
+
+    /* Section header style: bold label, no decorative bar/dash. */
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Print rules: hide the on-screen preview chrome, neutralise the grey
+       background so the paper prints edge-to-edge. */
+    @media print {
+      html, body { background: white; }
+      .page { box-shadow: none !important; margin: 0 !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="text-slate-900">
+
+  <!--
+    On-screen preview chrome. Hidden in print via .no-print.
+    Provides a quick note about the intended size and a Print button so the
+    reviewer can see the exact print rendering without leaving the page.
+  -->
+  <div class="no-print sticky top-0 z-10 bg-slate-900 text-slate-100 text-xs px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2">
+    <div class="flex items-center gap-3">
+      <span class="font-semibold tracking-wider uppercase text-[10px] text-slate-300">Preview</span>
+      <span>Terminal Report template — A4 portrait (210 × 297 mm)</span>
+    </div>
+    <button
+      onclick="window.print()"
+      class="rounded-sm border border-slate-500 px-3 py-1 text-[11px] hover:bg-slate-800 transition-colors"
+    >
+      Print / PDF
+    </button>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <!-- Page                                                                -->
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <div class="page bg-white shadow-2xl mx-auto my-6 px-[10mm] py-[8mm] text-[10px] leading-tight">
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Header: logo (left) + school identity + student photo (right)   -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <header class="flex items-center justify-between gap-4 pb-3 border-b border-slate-300">
+
+      <!-- Left: logo + school identity + report title -->
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <!-- Logo placeholder. Swap to <img> when the school's logo URL is available. -->
+        <div class="w-16 h-16 rounded-full border-2 border-violet-900 flex items-center justify-center shrink-0 bg-violet-50">
+          <span class="font-serif-title text-[9px] text-violet-900 text-center leading-tight px-1">
+            SCHOOL<br />LOGO
+          </span>
+        </div>
+
+        <!--
+          Text column. min-h-[45mm] now defines the header's minimum
+          height on its own (independent of the photo dimensions), giving
+          the school identity room to breathe. The three lines are grouped
+          together (justify-center + gap-1) so they sit as a balanced block
+          vertically centered next to the photo, rather than being pushed
+          apart to the top and bottom edges.
+        -->
+        <div class="min-w-0 flex flex-col justify-center gap-1 min-h-[45mm]">
+          <h1 class="font-serif-title text-[20px] font-bold tracking-wide text-slate-900 leading-tight uppercase">
+            Lutheran High School, Obot Idim
+          </h1>
+          <p class="text-[11px] text-slate-600">
+            P.M.B. 1001, Obot Idim, Ibesikpo Asutan L.G.A., Akwa Ibom State
+          </p>
+          <p class="font-serif-title text-[13px] font-bold text-slate-900 tracking-wider uppercase">
+            Terminal Report &bull; Senior Secondary School
+          </p>
+        </div>
+      </div>
+
+      <!-- Right: student photo placeholder, square, vertically centered inside the taller header -->
+      <div class="flex items-center shrink-0">
+        <!--
+          Student photo placeholder — 30mm × 30mm square. The header's
+          overall height is no longer driven by this element (see the text
+          column's min-h-[45mm]), so the photo sits vertically centered
+          in the extra space. In the real component this becomes an <img>
+          bound to student.passport_photo_url with a placeholder fallback.
+        -->
+        <div class="w-[30mm] h-[30mm] border border-slate-400 border-dashed flex items-center justify-center bg-slate-50">
+          <span class="text-[8px] text-slate-500 uppercase tracking-widest text-center leading-tight px-1">
+            Student<br />Photo
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Student Information                                              -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3">
+      <p class="eyebrow font-serif-title text-[9px] tracking-[0.2em] uppercase font-bold text-slate-700 mb-1">
+        Student Information
+      </p>
+
+      <!--
+        Identification fields grid — two rows of 5 labeled cells.
+        Position is not published on Senior Secondary reports (removed in
+        Template 2); Date Issued expands to col-span-2 to keep the row
+        balanced. "Next Term Begins" removed at the v2 spec.
+      -->
+      <div class="grid grid-cols-5 gap-0 border border-slate-300 rounded-md overflow-hidden">
+        <!-- Row 1: identity -->
+        <div class="p-1.5 border-r border-b border-slate-200 col-span-2">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Student Name</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">Victor Effiong Asuquo</p>
+        </div>
+        <div class="p-1.5 border-r border-b border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Student ID</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">LHS/2023/0042</p>
+        </div>
+        <div class="p-1.5 border-r border-b border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Class</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">SS 2 A</p>
+        </div>
+        <div class="p-1.5 border-b border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Sex</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">Male</p>
+        </div>
+
+        <!--
+          Row 2: term context + No. in Class + Date Issued.
+          Position field removed for Template 2 (Senior Secondary does not
+          publish class positions on the individual report). Date Issued
+          widened to col-span-2 to close the gap.
+        -->
+        <div class="p-1.5 border-r border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Term</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">First Term</p>
+        </div>
+        <div class="p-1.5 border-r border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Session</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">2024 / 2025</p>
+        </div>
+        <div class="p-1.5 border-r border-slate-200">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">No. in Class</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">32</p>
+        </div>
+        <div class="p-1.5 col-span-2">
+          <p class="text-[7px] uppercase tracking-widest text-slate-500">Date Issued</p>
+          <p class="text-[10px] font-semibold text-slate-900 mt-0.5">23 Jul 2026</p>
+        </div>
+      </div>
+
+      <!--
+        Emphasised summary strip — student average, class average, total
+        score, and pass/fail decision. Rendered as a separate 4-column grid
+        so its cells can carry a heavier visual weight than the identity
+        fields above without disrupting their tight 5-column rhythm.
+      -->
+      <div class="mt-1 grid grid-cols-4 gap-0 border border-violet-200 rounded-md overflow-hidden">
+        <div class="p-1.5 border-r border-violet-200 bg-violet-50">
+          <p class="text-[7px] uppercase tracking-widest text-violet-900/70">Student's Average</p>
+          <p class="text-[11px] font-bold text-violet-900 mt-0.5">73.71 %</p>
+        </div>
+        <div class="p-1.5 border-r border-violet-200 bg-violet-50">
+          <p class="text-[7px] uppercase tracking-widest text-violet-900/70">Class Average</p>
+          <p class="text-[11px] font-bold text-violet-900 mt-0.5">65.42 %</p>
+        </div>
+        <div class="p-1.5 border-r border-violet-200 bg-violet-50">
+          <p class="text-[7px] uppercase tracking-widest text-violet-900/70">Total Score</p>
+          <p class="text-[11px] font-bold text-violet-900 mt-0.5">1032</p>
+        </div>
+        <div class="p-1.5 bg-violet-50">
+          <p class="text-[7px] uppercase tracking-widest text-violet-900/70">Decision</p>
+          <p class="text-[11px] font-bold text-emerald-700 mt-0.5">PASS</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Grade Summary                                                    -->
+    <!-- Full-width band directly under the summary strip. Populated from -->
+    <!-- StudentAssessmentResult.grading_summary — an object keyed by     -->
+    <!-- grade-symbol prefix (e.g. { A: 6, B: 6, C: 0, F: 2 }). Keys are  -->
+    <!-- stable across the class so this always renders every prefix.    -->
+    <!-- Rose colour on the F count is preserved for print-friendly       -->
+    <!-- semantic weight (matches the failing-row treatment).             -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-1">
+      <div class="rounded-md border border-violet-200 bg-violet-50 px-3 py-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span class="uppercase tracking-widest text-[7.5px] text-violet-900/70 font-semibold">
+          Grade Summary
+        </span>
+        <span class="text-[10px] font-bold text-slate-900">A&times;6</span>
+        <span class="text-[10px] font-bold text-slate-900">B&times;6</span>
+        <span class="text-[10px] font-bold text-slate-900">C&times;0</span>
+        <span class="text-[10px] font-bold text-rose-700">F&times;2</span>
+      </div>
+    </section>
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Cognitive Section                                                -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3">
+      <p class="eyebrow font-serif-title text-[9px] tracking-[0.2em] uppercase font-bold text-slate-700 mb-1">
+        Cognitive · Academic Progress
+      </p>
+
+      <!--
+        Cognitive results table.
+
+        Column source-of-truth:
+          - Subject:    SubjectAssessmentResult.subject_name / subject_abbr
+          - Unit cols:  ArmCogAssessmentUnit rows (name/abbr/max_score).
+                        Scores are positional per display_order (see results.d.ts).
+          - Total:      SubjectAssessmentResult.total
+          - Grade:      SubjectAssessmentResult.grade_symbol
+          - Remark:     SubjectAssessmentResult.remark
+          - Teacher ID: Renamed from "Teacher's Signature". Populated from
+                        the SubjectArm teachers assignment. If more than one
+                        teacher, comma-separate; if none, render blank.
+
+        Totals row: only the Total column carries a value; every other cell
+        renders blank per spec.
+
+        Grade Summary: in Template 2 this has been lifted out of the table
+        into a standalone full-width band under the Student Information
+        summary strip, so the table now ends at the totals row.
+      -->
+      <table class="w-full border-collapse text-[9.5px] table-fixed">
+        <thead>
+          <!--
+            Header cells use border-violet-500 (lighter than the bg-violet-900
+            fill) so column boundaries are visible against the dark background.
+          -->
+          <tr class="bg-violet-900 text-white">
+            <th class="border border-violet-500 px-1 py-1 text-left whitespace-nowrap w-[6mm]" rowspan="2">#</th>
+            <th class="border border-violet-500 px-1.5 py-1 text-left whitespace-nowrap w-[38mm]" rowspan="2">Subject</th>
+            <th class="border border-violet-500 px-1 py-1 whitespace-nowrap" colspan="3">Cognitive Scores</th>
+            <th class="border border-violet-500 px-1 py-1 whitespace-nowrap w-[9mm]" rowspan="2">Grade</th>
+            <th class="border border-violet-500 px-1.5 py-1 text-left whitespace-nowrap w-[20mm]" rowspan="2">Remark</th>
+            <th class="border border-violet-500 px-1 py-1 whitespace-nowrap w-[15mm]" rowspan="2">Teacher ID</th>
+          </tr>
+          <tr class="bg-violet-900 text-white">
+            <th class="border border-violet-500 px-1 py-1 font-normal text-[8px] whitespace-nowrap w-[14mm]">
+              Class Work <span class="opacity-70">(30)</span>
+            </th>
+            <th class="border border-violet-500 px-1 py-1 font-normal text-[8px] whitespace-nowrap w-[14mm]">
+              Term Exam <span class="opacity-70">(70)</span>
+            </th>
+            <th class="border border-violet-500 px-1 py-1 font-normal text-[8px] whitespace-nowrap w-[13mm]">
+              Total <span class="opacity-70">(100)</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">1</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Mathematics</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">25</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">61</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">86</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-014</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">2</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">English Language</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">22</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">55</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">77</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-021</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">3</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Literature-in-English</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">20</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">52</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">72</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-021</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">4</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Efik Language</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">24</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">58</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">82</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-032</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">5</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Basic Science</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">23</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">57</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">80</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-011</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">6</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Basic Technology</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">12</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">30</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold text-rose-700">42</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold text-rose-700">F</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 font-semibold text-rose-700">Fail</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-018</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">7</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Social Studies</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">21</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">54</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">75</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-027</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">8</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Business Studies</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">26</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">62</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">88</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-039</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">9</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Christian Religious Studies</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">24</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">59</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">83</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-043</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">10</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Computer Studies</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">27</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">64</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">91</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">A</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Distinction</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-052</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">11</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Physical &amp; Health Education</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">22</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">51</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">73</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-046</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">12</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Cultural &amp; Creative Arts</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">20</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">49</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">69</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-058</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">13</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Home Economics</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">23</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">53</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">76</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold">B</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 text-slate-700">Merit</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-061</td>
+          </tr>
+          <tr class="bg-slate-50">
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-500">14</td>
+            <td class="border border-slate-300 px-1.5 py-0.5">Agricultural Science</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">8</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center">30</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold text-rose-700">38</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center font-semibold text-rose-700">F</td>
+            <td class="border border-slate-300 px-1.5 py-0.5 font-semibold text-rose-700">Fail</td>
+            <td class="border border-slate-300 px-1 py-0.5 text-center text-slate-600">TCH-067</td>
+          </tr>
+        </tbody>
+
+        <tfoot>
+          <!--
+            Totals row: only the Total column shows a value; every other cell
+            renders blank. Aggregate values (average, position, decision) live
+            in the summary strip up top.
+          -->
+          <tr class="bg-violet-900 text-white">
+            <td class="border border-violet-900 px-1 py-1"></td>
+            <td class="border border-violet-900 px-1.5 py-1 uppercase tracking-widest text-[8.5px]">Total</td>
+            <td class="border border-violet-900 px-1 py-1 text-center font-bold">297</td>
+            <td class="border border-violet-900 px-1 py-1 text-center font-bold">735</td>
+            <td class="border border-violet-900 px-1 py-1 text-center font-bold">1032</td>
+            <td class="border border-violet-900 px-1 py-1"></td>
+            <td class="border border-violet-900 px-1.5 py-1"></td>
+            <td class="border border-violet-900 px-1 py-1"></td>
+          </tr>
+
+          <!--
+            Grade Summary row — moved out of this table in Template 2.
+            The summary is rendered as a standalone full-width band under
+            the Student Information summary strip, so the Cognitive table
+            now ends at the totals row.
+          -->
+        </tfoot>
+      </table>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Behaviour (Affective) Section                                    -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3">
+      <div class="mb-1">
+        <p class="eyebrow font-serif-title text-[9px] tracking-[0.2em] uppercase font-bold text-slate-700">
+          Behaviour · Affective Domain
+        </p>
+      </div>
+
+      <!--
+        Behaviour tile grid — 4 columns × 3 rows for 12 items. Each tile shows
+        the behaviour name on the left and the grade letter on the right in
+        a small pill.
+
+        Data source: Object.values(studentResult.behaviours) sorted by
+        display_order. Grade letter comes from TraitAssessmentResult.grade_symbol.
+        When TraitAssessmentResult.is_absent is true the pill renders "—".
+      -->
+      <div class="grid grid-cols-4 gap-0.5">
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Punctuality</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Attendance</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Neatness</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Politeness</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Honesty</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Obedience</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Leadership</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Cooperation</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Self-Control</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Initiative</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Perseverance</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Sense of Responsibility</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Skills (Psychomotor) Section                                     -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3">
+      <div class="mb-1">
+        <p class="eyebrow font-serif-title text-[9px] tracking-[0.2em] uppercase font-bold text-slate-700">
+          Skills · Psychomotor Domain
+        </p>
+      </div>
+
+      <!--
+        Skills tile grid — 4 columns × 2 rows for 8 items. Same tile design
+        as the behaviour grid so the two sections read as visual siblings.
+
+        Data source: Object.values(studentResult.skills) sorted by display_order.
+      -->
+      <div class="grid grid-cols-4 gap-0.5">
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Handwriting</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Sports</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Handling of Tools</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Games</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Communication Skills</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">A</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Musical Skills</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">C</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Drawing &amp; Painting</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+        <div class="flex items-center justify-between border border-slate-300 rounded-sm px-2 py-0.5 bg-white">
+          <span class="text-[9.5px] text-slate-800">Crafts</span>
+          <span class="text-[10px] font-bold text-violet-900 border border-violet-200 bg-violet-50 rounded-sm px-1.5 leading-none py-0.5">B</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Remarks — Class Teacher + Principal (no signature placeholders)  -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3 grid grid-cols-2 gap-3">
+      <!-- Class Teacher's remark — bound to Assessment.teachers_remark -->
+      <div class="border border-slate-300 rounded-sm p-2.5 bg-slate-50">
+        <p class="eyebrow font-serif-title text-[8px] tracking-[0.2em] uppercase font-bold text-slate-700 mb-1">
+          Class Teacher's Remark
+        </p>
+        <p class="text-[10px] text-slate-800 leading-snug italic">
+          "Victor has shown exceptional dedication this term. His consistent
+          performance across the sciences and languages is commendable.
+          Keep it up!"
+        </p>
+      </div>
+
+      <!-- Principal's remark — bound to Assessment.supervisors_remark -->
+      <div class="border border-slate-300 rounded-sm p-2.5 bg-slate-50">
+        <p class="eyebrow font-serif-title text-[8px] tracking-[0.2em] uppercase font-bold text-slate-700 mb-1">
+          Principal's Comment
+        </p>
+        <p class="text-[10px] text-slate-800 leading-snug italic">
+          "An outstanding result. Victor is encouraged to sustain this
+          excellent standard and continue to be a role model to his peers."
+        </p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <!-- Grading & Rating Legends (moved to bottom)                       -->
+    <!-- ─────────────────────────────────────────────────────────────── -->
+    <section class="mt-3">
+      <p class="eyebrow font-serif-title text-[9px] tracking-[0.2em] uppercase font-bold text-slate-700 mb-1">
+        Grading &amp; Rating Legend
+      </p>
+
+      <!--
+        Three grading formats displayed side-by-side using the same shape as
+        GradingSystemTab so the vocabulary matches across the app:
+          - Cognitive → arm.cog_grading_format
+          - Behaviour → arm.aff_grading_format
+          - Skills    → arm.psy_grading_format
+        Each grade row = one ArmGradingFormatGrade { symbol, remark, low, high, passed }.
+        The `passed` flag can drive colour treatment (rose for fail rows) in the
+        real component.
+      -->
+      <div class="grid grid-cols-3 gap-2">
+
+        <!-- Cognitive grade legend -->
+        <div class="border border-slate-300 rounded-sm overflow-hidden">
+          <div class="px-2 py-1 bg-slate-100 border-b border-slate-300">
+            <p class="font-serif-title text-[9px] font-semibold uppercase tracking-wider text-slate-700">
+              Cognitive
+            </p>
+          </div>
+          <table class="w-full text-[8.5px]">
+            <thead class="text-slate-500">
+              <tr>
+                <th class="px-1.5 py-0.5 text-left font-normal">Range</th>
+                <th class="px-1.5 py-0.5 text-left font-normal">Remark</th>
+                <th class="px-1.5 py-0.5 text-right font-normal w-[8mm]">Symbol</th>
+              </tr>
+            </thead>
+            <tbody class="text-slate-800">
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">80 – 100</td>
+                <td class="px-1.5 py-0">Distinction</td>
+                <td class="px-1.5 py-0 text-right font-bold">A</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">60 – 79</td>
+                <td class="px-1.5 py-0">Merit</td>
+                <td class="px-1.5 py-0 text-right font-bold">B</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">50 – 59</td>
+                <td class="px-1.5 py-0">Pass</td>
+                <td class="px-1.5 py-0 text-right font-bold">C</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">0 – 49</td>
+                <td class="px-1.5 py-0 text-rose-700">Fail</td>
+                <td class="px-1.5 py-0 text-right font-bold text-rose-700">F</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Behaviour grade legend -->
+        <div class="border border-slate-300 rounded-sm overflow-hidden">
+          <div class="px-2 py-1 bg-slate-100 border-b border-slate-300">
+            <p class="font-serif-title text-[9px] font-semibold uppercase tracking-wider text-slate-700">
+              Behaviour
+            </p>
+          </div>
+          <table class="w-full text-[8.5px]">
+            <thead class="text-slate-500">
+              <tr>
+                <th class="px-1.5 py-0.5 text-left font-normal">Range</th>
+                <th class="px-1.5 py-0.5 text-left font-normal">Remark</th>
+                <th class="px-1.5 py-0.5 text-right font-normal w-[8mm]">Symbol</th>
+              </tr>
+            </thead>
+            <tbody class="text-slate-800">
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">80 – 100</td>
+                <td class="px-1.5 py-0">Excellent</td>
+                <td class="px-1.5 py-0 text-right font-bold">A</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">60 – 79</td>
+                <td class="px-1.5 py-0">Very Good</td>
+                <td class="px-1.5 py-0 text-right font-bold">B</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">50 – 59</td>
+                <td class="px-1.5 py-0">Good</td>
+                <td class="px-1.5 py-0 text-right font-bold">C</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">40 – 49</td>
+                <td class="px-1.5 py-0">Fair</td>
+                <td class="px-1.5 py-0 text-right font-bold">D</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">0 – 39</td>
+                <td class="px-1.5 py-0">Poor</td>
+                <td class="px-1.5 py-0 text-right font-bold">E</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Skills grade legend -->
+        <div class="border border-slate-300 rounded-sm overflow-hidden">
+          <div class="px-2 py-1 bg-slate-100 border-b border-slate-300">
+            <p class="font-serif-title text-[9px] font-semibold uppercase tracking-wider text-slate-700">
+              Skills
+            </p>
+          </div>
+          <table class="w-full text-[8.5px]">
+            <thead class="text-slate-500">
+              <tr>
+                <th class="px-1.5 py-0.5 text-left font-normal">Range</th>
+                <th class="px-1.5 py-0.5 text-left font-normal">Remark</th>
+                <th class="px-1.5 py-0.5 text-right font-normal w-[8mm]">Symbol</th>
+              </tr>
+            </thead>
+            <tbody class="text-slate-800">
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">80 – 100</td>
+                <td class="px-1.5 py-0">Excellent</td>
+                <td class="px-1.5 py-0 text-right font-bold">A</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">60 – 79</td>
+                <td class="px-1.5 py-0">Very Good</td>
+                <td class="px-1.5 py-0 text-right font-bold">B</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">50 – 59</td>
+                <td class="px-1.5 py-0">Good</td>
+                <td class="px-1.5 py-0 text-right font-bold">C</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">40 – 49</td>
+                <td class="px-1.5 py-0">Fair</td>
+                <td class="px-1.5 py-0 text-right font-bold">D</td>
+              </tr>
+              <tr class="border-t border-slate-200">
+                <td class="px-1.5 py-0 text-slate-500">0 – 39</td>
+                <td class="px-1.5 py-0">Poor</td>
+                <td class="px-1.5 py-0 text-right font-bold">E</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer strip: doc metadata (Ref removed for Template 2). -->
+    <footer class="mt-4 pt-2 border-t border-slate-300 flex items-center justify-between text-[7px] text-slate-500 uppercase tracking-widest">
+      <a
+        href="https://www.lutheranhighschool.ng/dashboard/arm?id=1036c08c-e3d0-46ae-b079-5f52e467e3aa"
+        class="normal-case tracking-normal hover:text-slate-700 hover:underline"
+      >https://www.lutheranhighschool.ng/results</a>
+      <span>Issued 23 Jul 2026</span>
+    </footer>
+  </div>
+
+</body>
+</html>

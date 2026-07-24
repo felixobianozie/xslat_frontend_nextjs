@@ -1,13 +1,32 @@
 import Link from "next/link";
 
-// Section cards for the results landing page
+// ─────────────────────────────────────────────────────────────────────────────
+// /results — services landing
+//
+// This is the discoverability page for the school's results-related services.
+// Three cards fan out into: Check Results, Validate Results, and Generate
+// Transcript. The "Check Results" card is the only one wired to a real
+// destination (/results/check); the other two still point to /coming-soon
+// because their features aren't built yet.
+//
+// Layout note:
+//   Navbar and Footer are provided by the parent PublicLayout — this page
+//   only renders its own <main>, matching the existing convention for
+//   routes inside that layout.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Section cards for the results landing page.
+// The `cta` field lets each card carry its own call-to-action label so live
+// destinations (Check now) read differently from the placeholder ones
+// (Get started) without needing to branch inside the render.
 const sections = [
   {
-    slug: "/coming-soon",
+    slug: "/results/check",
     title: "Check Results",
     subtitle: "View your examination results",
     preview:
-      "Check your WAEC, NECO, and internal examination results online. Enter your candidate number to access your result slip and subject scores instantly.",
+      "Check your internal examination results online. Enter your **Student ID** and complete the required fields to instantly access your assessment report.",
+    cta: "Check now",
     icon: (
       <svg
         width="28"
@@ -137,6 +156,7 @@ const sections = [
     subtitle: "Verify the authenticity of results",
     preview:
       "Employers, institutions, and other parties can verify the authenticity of any LHS result or certificate. Fast, secure, and tamper-proof validation.",
+    cta: "Get started",
     icon: (
       <svg
         width="28"
@@ -225,6 +245,7 @@ const sections = [
     subtitle: "Official academic transcripts",
     preview:
       "Request an official academic transcript for university applications, scholarships, or employment. Generated and sealed by the school registrar.",
+    cta: "Get started",
     icon: (
       <svg
         width="28"
@@ -297,7 +318,7 @@ const sections = [
         {/* Content lines */}
         {[46, 58, 70, 82].map((y, i) => (
           <rect
-            key={i}
+            key={`line-${i}`}
             x="62"
             y={y}
             width={i % 2 === 0 ? 50 : 38}
@@ -310,7 +331,7 @@ const sections = [
         {/* Grade column */}
         {[46, 58, 70, 82].map((y, i) => (
           <rect
-            key={i}
+            key={`grade-${i}`}
             x="120"
             y={y}
             width="22"
@@ -400,25 +421,6 @@ export default function ResultsPage() {
         <span className="text-slate-600 font-medium">Results</span>
       </div>
 
-      {/* Info callout */}
-      <div className="container mx-auto px-6 lg:px-16 mb-10">
-        <div className="bg-white border border-indigo-100 rounded-2xl p-5 flex gap-4 items-start shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xl shrink-0">
-            ℹ️
-          </div>
-          <div>
-            <p className="font-bold text-indigo-900 text-sm mb-1">
-              Coming Soon
-            </p>
-            <p className="text-slate-500 text-sm leading-relaxed">
-              Our online results portal is currently under development. All
-              three services below will be available very soon. In the meantime,
-              contact the school directly for result enquiries.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Section cards */}
       <div className="container mx-auto px-6 lg:px-16 pb-24">
         <div className="text-center mb-12">
@@ -487,7 +489,7 @@ export default function ResultsPage() {
                 </p>
 
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-indigo-600 group-hover:text-indigo-800 transition-colors">
-                  Get started
+                  {sec.cta}
                   <svg
                     width="16"
                     height="16"
