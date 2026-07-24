@@ -6,9 +6,15 @@
 // Public route: /results/check
 //
 // Reached from the "Check now" CTA on /results. Collects an arm, student
-// public ID, and scratch card PIN, submits to the public
-// academics/student/result/check/ endpoint, and renders the appropriate
-// result template on success.
+// public ID, and scratch card PIN. On submit, fires two public backend
+// requests in parallel:
+//
+//   - GET  student/result/context/  (arm config + teachers)
+//   - POST student/result/check/    (per-student result)
+//
+// The two responses are merged into a single StudentResultResponse and
+// handed to the appropriate template component (junior, senior, or the
+// safe fallback).
 //
 // Layout note:
 //   Navbar and Footer are provided by the parent PublicLayout — this page
@@ -18,9 +24,6 @@
 
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
-// TEMP TESTING: `toast` is only used by the "not yet published" simulation
-// inside the mutationFn below. Remove this import when reverting the
-// USE_MOCK_RESULT block back to `return MOCK_RESULT;`.
 import { toast } from "react-toastify";
 
 import publicFetch from "@/lib/Publicfetch";
@@ -30,103 +33,108 @@ import ResultsPreview from "./components/ResultsPreview";
 import type {
   ApiEnvelope,
   CheckStudentResultPayload,
+  CheckStudentResultResponse,
+  ResultContextResponse,
   StudentResultResponse,
+  SubjectAssessmentResult,
+  TeacherRef,
 } from "./components/results";
 
-// TEMP: Mock fixture used while the backend endpoint is still being built.
-// Imported only for the mock branch inside the mutationFn below — remove
-// this import (and delete /__fixtures__/mock-result.ts) once the real
-// backend response is live and verified.
-import { MOCK_RESULT } from "./components/mock-result";
-
-// Backend endpoint path — relative to NEXT_PUBLIC_BACKEND_BASE_URL. Hoisted
-// to module scope so the mutationFn body stays short and the endpoint is
+// Backend endpoint paths — relative to NEXT_PUBLIC_BACKEND_BASE_URL. Hoisted
+// to module scope so the mutationFn body stays short and the endpoints are
 // easy to spot when scanning the file.
-const CHECK_RESULT_ENDPOINT = "academics/student/result/check/";
+const CHECK_RESULT_ENDPOINT = "student/result/check/";
+const RESULT_CONTEXT_ENDPOINT = "student/result/context/";
 
-// TEMP: Flip to `false` (or delete this constant and the mock branch inside
-// the mutationFn) once the backend endpoint is returning the extended
-// response shape. Kept as a single obvious constant so it's impossible to
-// miss during a code review.
-//
-// While `true`:
-//   - Submitting the form skips the network entirely.
-//   - After a short simulated delay, the mock fixture is returned as if it
-//     came back from the server.
-//   - Form validation, isPending, success rendering, and the preview flow
-//     all still work exactly as they will in production.
-const USE_MOCK_RESULT = true;
-
-// How long to pretend the network took, in ms. Just enough for the form's
-// "Checking…" button and the mutation's isPending state to be visible so
-// the loading UX can be validated too.
-const MOCK_LATENCY_MS = 600;
+// School ID injected at build time via env. Every context request needs it
+// alongside the arm ID; the backend validates that the arm belongs to this
+// school before returning anything. If the variable is missing, the
+// mutation surfaces a friendly error instead of firing a request with an
+// undefined query parameter.
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID;
 
 export default function CheckResultsPage() {
-  // Mutation for the public check-result endpoint. Kept inline here (rather
-  // than extracted into a hook) while it's still small and only called from
-  // this component. If a second consumer appears, or the body outgrows the
-  // page, lift it back into hooks/.
+  // Mutation for the public check-result flow. Two parallel requests fire
+  // when the user submits:
   //
-  // Generics on useMutation are, in order:
-  //   1. Success payload — what mutationFn resolves with.
-  //   2. Error type       — what mutationFn throws.
-  //   3. Input variables — what callers pass to `mutate(...)`.
+  //   1. GET  /student/result/context/?school-id=…&arm-id=…
+  //      Returns the arm's assessment format, grading formats, result
+  //      template metadata, school address parts, and the arm's subjects
+  //      with their assigned teachers. Stable per arm — safe to cache.
   //
-  // publicFetch is the right utility because the endpoint is AllowAny on the
-  // backend; using authFetch would break the flow for signed-out visitors
-  // (the whole point of this page). It returns { data, error } rather than
-  // throwing, so we translate errors into throws ourselves for react-query.
+  //   2. POST /student/result/check/
+  //      Redeems the scratch-card PIN and returns the per-student result
+  //      (subjects/behaviours/skills/decision/position/remarks). Consumes
+  //      a use of the PIN on success.
   //
-  // retry: false — each attempt consumes a use of the caller's scratch card
-  // PIN, so an automatic retry would waste it.
+  // On success both responses are merged into a single StudentResultResponse
+  // that the templates consume — the enriched arm + school from the context
+  // response, plus each subject row hydrated with its teacher list.
+  //
+  // Both requests fire in parallel because either one failing means the
+  // template can't render; there's no benefit to sequencing them.
+  //
+  // retry: false — each attempt consumes a PIN use on success, and even on
+  // failure an automatic retry would fire the context endpoint again for
+  // no gain.
   const mutation = useMutation<
     StudentResultResponse,
     Error,
     CheckStudentResultPayload
   >({
     mutationFn: async (payload) => {
-      // TEMP: Mock branch — returns the fixture instead of hitting the
-      // network. Delete this whole `if` block (and the imports and constants
-      // at the top of the file) once the backend endpoint is live.
-      if (USE_MOCK_RESULT) {
-        // Pretend the network took a moment so the form's "Checking…"
-        // loading state is visible during the flow.
-        await new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
-        // `payload` is intentionally unused here — the mock fixture is a
-        // fixed snapshot. Once the backend is live, the real fetch below
-        // takes over and starts using it.
-        void payload;
-
-        // TEMP TESTING (temporary — revert after test):
-        // Simulate a backend response indicating the selected term's
-        // result is not yet published. This surfaces the message in both
-        // the form's inline error banner (via the thrown Error) and as a
-        // toast, and prevents the preview from ever mounting because
-        // `mutation.data` stays undefined on failure.
-        //
-        // TO REVERT: delete the three lines below and restore
-        //   return MOCK_RESULT;
-        void MOCK_RESULT; // keeps the import above referenced during the test
-        const notPublishedMessage =
-          "The results for the selected term have not been published yet.";
-        toast.error(notPublishedMessage);
-        throw new Error(notPublishedMessage);
+      if (!SCHOOL_ID) {
+        throw new Error(
+          "This school hasn't been configured for the results portal yet. Please contact the school administrator.",
+        );
       }
 
-      const { data, error } = await publicFetch<
-        ApiEnvelope<StudentResultResponse>
-      >(CHECK_RESULT_ENDPOINT, {
-        method: "POST",
-        body: payload,
-      });
+      // Build the context URL with query params. Backend expects the
+      // hyphenated names `school-id` and `arm-id` (NOT the snake_case
+      // variants — verified against the endpoint's 400 response body).
+      // encodeURIComponent guards against unexpected characters even
+      // though both values are UUIDs.
+      const contextUrl =
+        `${RESULT_CONTEXT_ENDPOINT}` +
+        `?school-id=${encodeURIComponent(SCHOOL_ID)}` +
+        `&arm-id=${encodeURIComponent(payload.arm_id)}`;
 
-      if (error) throw new Error(error.message);
-      if (!data) throw new Error("The server returned an empty response.");
+      const [contextResult, checkResult] = await Promise.all([
+        publicFetch<ApiEnvelope<ResultContextResponse>>(contextUrl, {
+          method: "GET",
+        }),
+        publicFetch<ApiEnvelope<CheckStudentResultResponse>>(
+          CHECK_RESULT_ENDPOINT,
+          {
+            method: "POST",
+            body: payload,
+          },
+        ),
+      ]);
 
-      // The API envelope wraps every response as { message, data } — unwrap
-      // once here so downstream consumers work with the flat result object.
-      return data.data;
+      // Surface the check endpoint's error message first when both fail —
+      // it's the one tied to the credential the user just typed, so it's
+      // usually the more actionable one ("wrong PIN", "PIN exhausted",
+      // "student not found"). Context errors ("arm not found") are much
+      // less common in practice because the arm comes from a configured
+      // list, not from user input.
+      if (checkResult.error) throw new Error(checkResult.error.message);
+      if (contextResult.error) throw new Error(contextResult.error.message);
+      if (!contextResult.data || !checkResult.data) {
+        throw new Error("The server returned an empty response.");
+      }
+
+      return mergeResultAndContext(
+        checkResult.data.data,
+        contextResult.data.data,
+      );
+    },
+    // Mirror the inline error banner to a toast so the user sees the
+    // failure even if they've scrolled past the form. Fires once per
+    // failed submission (react-query's onError doesn't re-fire on
+    // re-renders), so there's no risk of duplicate toasts.
+    onError: (error) => {
+      toast.error(error.message);
     },
     retry: false,
   });
@@ -168,9 +176,9 @@ export default function CheckResultsPage() {
               Check your result
             </h1>
             <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-              Select the class, enter the student ID, and paste the PIN from the
-              scratch card. The result will appear below for review and
-              printing.
+              Select the session, term and class, enter the student ID, and
+              enter the PIN from the scratch card. The result will appear in a
+              short while for review, download or printing.
             </p>
           </header>
 
@@ -193,4 +201,52 @@ export default function CheckResultsPage() {
       )}
     </main>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mergeResultAndContext
+//
+// Combine the raw check-endpoint response with the arm context into a single
+// StudentResultResponse that the templates already know how to consume.
+//
+// Two enrichments happen here:
+//   1. `arm` and `school` are swapped for the enriched versions from the
+//      context response. The check endpoint returns them as basic
+//      {id, name, abbr} references; templates need the full arm config
+//      (grading formats, units, template_key) and the school's address
+//      parts.
+//   2. Each subject in `subjects` is hydrated with a `teachers` list keyed
+//      by `subject_id`. If a subject has no teachers assigned in context,
+//      the list is left empty and the template renders "—" in the
+//      Teacher ID column.
+//
+// Everything else — behaviours, skills, grading summary, remarks, level /
+// section / term / session basics — passes through unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+function mergeResultAndContext(
+  check: CheckStudentResultResponse,
+  context: ResultContextResponse,
+): StudentResultResponse {
+  // Build a lookup so we can attach teachers to each subject in O(1).
+  const teachersBySubjectId: Record<string, TeacherRef[]> = {};
+  for (const ctxSubject of context.subjects) {
+    teachersBySubjectId[ctxSubject.subject.id] = ctxSubject.teachers;
+  }
+
+  // Rebuild the subjects map with each row's teachers attached. Preserves
+  // the original insertion order so display_order-based sorts still work.
+  const enrichedSubjects: Record<string, SubjectAssessmentResult> = {};
+  for (const [key, subject] of Object.entries(check.subjects)) {
+    enrichedSubjects[key] = {
+      ...subject,
+      teachers: teachersBySubjectId[subject.subject_id] ?? [],
+    };
+  }
+
+  return {
+    ...check,
+    arm: context.arm,
+    school: context.school,
+    subjects: enrichedSubjects,
+  };
 }

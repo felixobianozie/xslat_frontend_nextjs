@@ -25,18 +25,22 @@ import type { ComponentType } from "react";
 
 import type { ResultTemplateProps } from "./types";
 import FallbackTerminalReport from "./FallbackTerminalReport";
-import TerminalReportJuniorSecondary from "./TerminalReportJuniorSecondary";
-import TerminalReportSeniorSecondary from "./TerminalReportSeniorSecondary";
+import JuniorDefaultA4V1 from "./JuniorDefaultA4V1";
+import SeniorDefaultA4V1 from "./SeniorDefaultA4V1";
 
 // The registry itself. Keys MUST match the template_key values seeded on
-// the backend's ResultTemplate rows for each active template. Rename here
-// only when the backend seed changes.
+// the backend's ResultTemplate rows for each active template. If the
+// backend seed changes, update these keys accordingly.
+//
+// Current DB entries (as of the last sync):
+//   junior-default-a4v1 → "JUNIOR DEFAULT A4V1"
+//   senior-default-a4v1 → "SENIOR DEFAULT A4V1"
 export const TEMPLATE_REGISTRY: Record<
   string,
   ComponentType<ResultTemplateProps>
 > = {
-  "terminal-report-junior-secondary-v2": TerminalReportJuniorSecondary,
-  "terminal-report-senior-secondary-v2": TerminalReportSeniorSecondary,
+  "junior-default-a4v1": JuniorDefaultA4V1,
+  "senior-default-a4v1": SeniorDefaultA4V1,
 };
 
 /**

@@ -30,9 +30,9 @@ export interface ResultGrade {
   id: string;
   low: number;
   high: number;
-  symbol: string;   // e.g. "A", "B", "F"
-  remark: string;   // e.g. "Distinction", "Merit", "Fail"
-  passed: boolean;  // used for colour treatment in the legend
+  symbol: string; // e.g. "A", "B", "F"
+  remark: string; // e.g. "Distinction", "Merit", "Fail"
+  passed: boolean; // used for colour treatment in the legend
 }
 
 // A grading format bundles together a set of grades over a low–high range.
@@ -102,6 +102,19 @@ export interface ResultArm extends ResultAcademicRef {
   result_template: ResultTemplateMeta | null;
 }
 
+// ── Teacher record (from the result context endpoint) ───────────────────────
+
+// Flat teacher shape returned by /academics/student/result/context/ and
+// merged onto each subject row on the frontend. `public_id` is the human
+// identifier the templates render in the Teacher ID column (e.g. "TCH-014").
+export interface TeacherRef {
+  id: string;
+  public_id: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+}
+
 // ── Per-subject / per-trait / per-skill rows ─────────────────────────────────
 // These mirror _build_subject_row / _build_behaviour_rows / _build_skill_rows
 // in results_aggregation.py. Positional score arrays: index N corresponds to
@@ -118,6 +131,10 @@ export interface SubjectAssessmentResult {
   total: number;
   grade_symbol: string | null;
   remark: string | null;
+  // Populated on the frontend by merging in data from the result context
+  // endpoint. Absent from the raw check-endpoint response; present after
+  // merge. Templates render `teachers[0]?.public_id ?? "—"`.
+  teachers?: TeacherRef[];
 }
 
 export interface TraitAssessmentResult {
@@ -125,7 +142,7 @@ export interface TraitAssessmentResult {
   trait_name: string;
   display_order: number;
   max_score: number;
-  score: number;              // -1 = absent
+  score: number; // -1 = absent
   grade_symbol: string | null;
   remark: string | null;
   is_absent: boolean;
@@ -135,9 +152,14 @@ export interface TraitAssessmentResult {
 // across the arm so templates can iterate confidently.
 export type GradingSummary = Record<string, number>;
 
-// ── Top-level student result payload ─────────────────────────────────────────
+// ── Raw check endpoint response ──────────────────────────────────────────────
+// This is what /academics/student/result/check/ actually returns. It carries
+// the per-student result data plus the academic-chain objects in their
+// basic (id/name/abbr) form only. The frontend merges this with
+// ResultContextResponse to produce the enriched StudentResultResponse that
+// templates consume.
 
-export interface StudentResultResponse {
+export interface CheckStudentResultResponse {
   // Class-level context, always surfaced so the template can render
   // "Position 3 of 42" and "Class avg 65.42%" without a second call.
   class_average: number;
@@ -171,12 +193,56 @@ export interface StudentResultResponse {
   teachers_remark: string;
   supervisors_remark: string;
 
-  // Academic-context objects walked from the assessment's parent chain
+  // Basic (id/name/abbr) academic context — enriched during merge.
+  arm: ResultAcademicRef;
+  level: ResultAcademicRef;
+  section: ResultAcademicRef;
+  term: ResultAcademicRef;
+  session: ResultAcademicRef;
+  school: ResultAcademicRef;
+}
+
+// ── Context endpoint response ────────────────────────────────────────────────
+// This is what /academics/student/result/context/ returns. It carries the
+// arm's assessment/grading configuration, the school with address parts,
+// and the arm's subject-teacher assignments. The response is stable per
+// arm and can be cached aggressively.
+
+// One SubjectArm row as returned by the context endpoint. Not to be confused
+// with SubjectAssessmentResult (which is per-student). Used only during the
+// merge step to hydrate `SubjectAssessmentResult.teachers`.
+export interface ContextSubjectArm {
+  subject_arm_id: string;
+  display_order: number;
+  offered: boolean;
+  subject: {
+    id: string;
+    definition_id: string;
+    name: string;
+    abbr: string;
+  };
+  teachers: TeacherRef[];
+}
+
+export interface ResultContextResponse {
   arm: ResultArm;
   level: ResultAcademicRef;
   section: ResultAcademicRef;
   term: ResultAcademicRef;
   session: ResultAcademicRef;
+  school: ResultSchoolRef;
+  subjects: ContextSubjectArm[];
+}
+
+// ── Merged shape templates consume ───────────────────────────────────────────
+// Produced by mergeResultAndContext() in page.tsx from the two raw responses
+// above. `arm` and `school` are upgraded to their enriched types; each
+// `subjects[key]` row is enriched with the matching context teachers list.
+export interface StudentResultResponse extends Omit<
+  CheckStudentResultResponse,
+  "arm" | "school"
+> {
+  arm: ResultArm;
   school: ResultSchoolRef;
 }
 

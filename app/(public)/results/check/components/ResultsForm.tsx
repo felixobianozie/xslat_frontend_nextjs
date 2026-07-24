@@ -27,6 +27,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import type { UseMutationResult } from "@tanstack/react-query";
+import { toast } from "react-toastify";
 
 import { ARM_DIRECTORY } from "./arm-directory";
 import type {
@@ -114,17 +115,25 @@ export default function ResultsForm({ mutation }: ResultsFormProps) {
 
     // Client-side guardrails — the backend validates too, but showing a
     // helpful error here saves a network round trip and prevents users
-    // from burning pin uses on obviously incomplete requests.
+    // from burning pin uses on obviously incomplete requests. Each
+    // validation error is mirrored to a toast so it's visible even if
+    // the user has scrolled the banner out of view.
     if (!armId) {
-      setLocalError("Please choose a class.");
+      const msg = "Please choose a class.";
+      setLocalError(msg);
+      toast.error(msg);
       return;
     }
     if (!studentPublicId.trim()) {
-      setLocalError("Please enter the student ID.");
+      const msg = "Please enter the student ID.";
+      setLocalError(msg);
+      toast.error(msg);
       return;
     }
     if (!pin.trim()) {
-      setLocalError("Please enter the scratch card PIN.");
+      const msg = "Please enter the scratch card PIN.";
+      setLocalError(msg);
+      toast.error(msg);
       return;
     }
 
@@ -250,7 +259,7 @@ export default function ResultsForm({ mutation }: ResultsFormProps) {
             type="text"
             value={studentPublicId}
             onChange={(e) => setStudentPublicId(e.target.value)}
-            placeholder="e.g. XYZ/123456"
+            placeholder="e.g. XYZ/000000"
             autoComplete="off"
             className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
           />

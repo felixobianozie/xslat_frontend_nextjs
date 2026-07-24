@@ -86,55 +86,55 @@ export const ARM_DIRECTORY: ArmDirectorySession[] = [
           // displayed to the parent/student in the dropdown; the arm_id is
           // what actually gets sent to the backend.
           {
-            arm_id: "00000000-0000-0000-0000-000000000001",
+            arm_id: "cc99bd32-ae67-4c8a-972c-91888958b5ba",
             label: "JSS 1 A",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000002",
+            arm_id: "74ed8a62-770d-4453-9185-a771bd34cc7e",
             label: "JSS 1 B",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000003",
+            arm_id: "e2b7cab6-9ca5-4d0e-82ba-3dccba7744bc",
             label: "JSS 1 C",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000004",
+            arm_id: "8d7747a8-65b7-4b88-8cfe-53ebbc4fc9da",
             label: "JSS 1 D",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000005",
+            arm_id: "c746ac3f-802f-4f0a-8fba-14df3ef69db1",
             label: "JSS 1 E",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000006",
+            arm_id: "d42fadfd-25fb-4a6b-91b3-6f11fac2abec",
             label: "JSS 1 F",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000007",
+            arm_id: "aae63c26-86db-4a58-ac01-d8c3d8877552",
             label: "JSS 2 A",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000008",
+            arm_id: "367f9673-6f82-4f1f-865d-df2d46bca3d2",
             label: "JSS 2 B",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000009",
+            arm_id: "d5ee2b1c-cea8-4fb8-a4ab-dc475df4ad1c",
             label: "JSS 2 C",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000010",
+            arm_id: "edeb23d5-7657-4ec9-9f31-2ae8ceee4914",
             label: "JSS 2 D",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000011",
+            arm_id: "1036c08c-e3d0-46ae-b079-5f52e467e3aa",
             label: "SS 1 A",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000012",
+            arm_id: "b7d3afa7-ff74-4ca7-98d8-e09a9aa56f21",
             label: "SS 1 B",
           },
           {
-            arm_id: "00000000-0000-0000-0000-000000000013",
+            arm_id: "89303a82-e362-4d19-9b34-888a29189d68",
             label: "SS 1 C",
           },
         ],

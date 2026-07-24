@@ -291,11 +291,11 @@ export default FallbackTerminalReport;
 // ── Local presentational helpers ─────────────────────────────────────────────
 
 // Format a single cell in the score matrix:
-//   - null   → blank (no record for this unit)
+//   - null   → "—" (no record for this unit — cell still has a value)
 //   - -1     → "AB" (explicit absent marker from the backend)
 //   - number → the value as-is
 function formatScore(score: number | null): string {
-  if (score === null || score === undefined) return "";
+  if (score === null || score === undefined) return "—";
   if (score === -1) return "AB";
   return String(score);
 }
@@ -320,7 +320,7 @@ function TraitBlock({
             className="flex items-center justify-between rounded-sm border border-slate-300 px-2 py-1"
           >
             <span>{row.trait_name}</span>
-            <span className="font-semibold">{row.grade_symbol ?? "—"}</span>
+            <span className="font-semibold">{row.grade_symbol || "—"}</span>
           </div>
         ))}
       </div>

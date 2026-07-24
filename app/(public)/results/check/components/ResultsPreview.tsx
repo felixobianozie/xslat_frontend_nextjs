@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useRef, useState } from "react";
+import { toast } from "react-toastify";
 
 import { resolveTemplate } from "./registry";
 import { downloadResultPdf } from "./downloadResultPdf";
@@ -120,9 +121,10 @@ export default function ResultsPreview({
       // silently exiting so any future regression (e.g. a template missing
       // its ref wiring) is visible to the user instead of just "nothing
       // happens on click".
-      setDownloadError(
-        "Couldn't read the result sheet. Please refresh and try again.",
-      );
+      const msg =
+        "Couldn't read the result sheet. Please refresh and try again.";
+      setDownloadError(msg);
+      toast.error(msg);
       return;
     }
     setIsDownloading(true);
@@ -132,12 +134,14 @@ export default function ResultsPreview({
     } catch (err) {
       // Surface the error in the panel — html2canvas can fail on
       // cross-origin images or very large captures. Keeping the caught
-      // error's message helps diagnose in the wild.
-      setDownloadError(
+      // error's message helps diagnose in the wild. Mirrored to a toast so
+      // the user sees the failure even if they've scrolled past the panel.
+      const msg =
         err instanceof Error
           ? err.message
-          : "Something went wrong while creating the PDF.",
-      );
+          : "Something went wrong while creating the PDF.";
+      setDownloadError(msg);
+      toast.error(msg);
     } finally {
       setIsDownloading(false);
     }
@@ -199,7 +203,7 @@ export default function ResultsPreview({
             aria-busy={isDownloading}
             className="rounded-md bg-indigo-900 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isDownloading ? "Preparing PDF…" : "Download PDF"}
+            {isDownloading ? "Preparing PDF…" : "Download As PDF"}
           </button>
           {onReset && (
             <button
@@ -256,5 +260,5 @@ function buildFileName(result: StudentResultResponse): string {
   const safeStudent = student.replace(/[^\w\s-]/g, "").trim() || "student";
   const safeTerm = term.replace(/[^\w\s-]/g, "").trim() || "term";
 
-  return `${safeStudent} - ${safeTerm} ${session}.pdf`;
+  return `${safeStudent} — ${safeTerm} ${session}.pdf`;
 }

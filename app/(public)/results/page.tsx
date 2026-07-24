@@ -25,7 +25,7 @@ const sections = [
     title: "Check Results",
     subtitle: "View your examination results",
     preview:
-      "Check your internal examination results online. Enter your **Student ID** and complete the required fields to instantly access your assessment report.",
+      "Check your internal examination results online. Enter your Student ID and complete the required fields to instantly access your assessment report.",
     cta: "Check now",
     icon: (
       <svg
