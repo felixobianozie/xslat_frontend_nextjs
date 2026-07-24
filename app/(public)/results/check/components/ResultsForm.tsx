@@ -172,7 +172,7 @@ export default function ResultsForm({ mutation }: ResultsFormProps) {
             id="results-session"
             value={sessionId}
             onChange={(e) => handleSessionChange(e.target.value)}
-            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 appearance-none"
           >
             {ARM_DIRECTORY.map((session) => (
               <option key={session.id} value={session.id}>
@@ -195,7 +195,7 @@ export default function ResultsForm({ mutation }: ResultsFormProps) {
             value={termId}
             onChange={(e) => handleTermChange(e.target.value)}
             disabled={termsForSession.length === 0}
-            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50 disabled:text-slate-400"
+            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50 disabled:text-slate-400 appearance-none"
           >
             {termsForSession.length === 0 ? (
               <option value="">No terms available</option>
@@ -222,7 +222,7 @@ export default function ResultsForm({ mutation }: ResultsFormProps) {
             value={armId}
             onChange={(e) => setArmId(e.target.value)}
             disabled={armsForTerm.length === 0}
-            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50 disabled:text-slate-400"
+            className="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-50 disabled:text-slate-400 appearance-none"
           >
             <option value="">
               {armsForTerm.length === 0
