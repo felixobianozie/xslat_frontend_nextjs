@@ -278,13 +278,13 @@ export default function BroadsheetsList({
           (grid's default) keeps both cards the same height regardless of
           which side has slightly more content. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <TermProgressStrip
+        {/* <TermProgressStrip
           approved={termStats.approved}
           pending={termStats.pending}
           total={termStats.total}
           allApproved={termStats.allApproved}
           isPending={isPending}
-        />
+        /> */}
         <SchoolAccessCard
           stat={schoolAccessStat}
           isPending={schoolAccessStatPending}
@@ -313,7 +313,7 @@ export default function BroadsheetsList({
             enabled; the modal explains the action and the backend will
             ultimately enforce its own preconditions. Full-width on mobile
             to match the search input above it; content-sized on sm+. */}
-        <button
+        {/* <button
           type="button"
           onClick={() => setPublishModalOpen(true)}
           className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-sm shadow-violet-200 transition-colors whitespace-nowrap"
@@ -322,7 +322,7 @@ export default function BroadsheetsList({
           <Globe size={12} />
           <span className="hidden sm:inline">Publish Results</span>
           <span className="sm:hidden">Publish</span>
-        </button>
+        </button> */}
       </div>
 
       {/* ── List body ───────────────────────────────────────────────────── */}
@@ -373,7 +373,8 @@ export default function BroadsheetsList({
 
                       <td className="px-5">
                         <Link
-                          href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                          // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                          href="/dashboard/broadsheet/arms"
                           className="font-medium text-slate-800 hover:text-violet-700"
                         >
                           {formatArm(arm)}
@@ -389,13 +390,13 @@ export default function BroadsheetsList({
                       </td>
 
                       <td className="px-5" onClick={(e) => e.stopPropagation()}>
-                        <BroadsheetsListActionMenu
+                        {/* <BroadsheetsListActionMenu
                           armId={arm.id}
                           status={arm.broadsheet}
                           onView={() => handleView(arm)}
                           onApprove={() => handleApprove(arm)}
                           onRevoke={() => handleRevoke(arm)}
-                        />
+                        /> */}
                       </td>
                     </tr>
                   ))

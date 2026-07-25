@@ -44,8 +44,7 @@ const navItems: NavItem[] = [
   },
   {
     label: "Broadsheet",
-    // href: "/dashboard/broadsheet/arms",
-    href: "/dashboard/1",
+    href: "/dashboard/broadsheet/arms",
     icon: BookOpen,
     activeWhenStartsWith: ["/dashboard/broadsheet/arm"],
   },
