@@ -425,7 +425,8 @@ export default function BroadsheetsList({
                 >
                   <div className="flex items-start justify-between p-4 gap-3">
                     <Link
-                      href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                      // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                      href="/dashboard/broadsheet/arms"
                       className="flex flex-col min-w-0 flex-1"
                     >
                       <span className="text-sm font-semibold text-slate-800 truncate">
@@ -436,13 +437,13 @@ export default function BroadsheetsList({
                       </span>
                     </Link>
                     <div onClick={(e) => e.stopPropagation()}>
-                      <BroadsheetsListActionMenu
+                      {/* <BroadsheetsListActionMenu
                         armId={arm.id}
                         status={arm.broadsheet}
                         onView={() => handleView(arm)}
                         onApprove={() => handleApprove(arm)}
                         onRevoke={() => handleRevoke(arm)}
-                      />
+                      /> */}
                     </div>
                   </div>
 
