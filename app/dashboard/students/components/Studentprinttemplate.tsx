@@ -9,6 +9,8 @@
 
 import { forwardRef } from "react";
 
+import { getStudentStatusLabel } from "./Studentstatuspill";
+
 const GENDER_LABELS: Record<string, string> = {
   M: "Male",
   F: "Female",
@@ -69,7 +71,11 @@ const StudentPrintTemplate = forwardRef<
                 <td className="px-3">{formatArm(student.current_arm)}</td>
                 <td className="px-3">{student.phone || "—"}</td>
                 <td className="px-3">{student.email || "—"}</td>
-                <td className="px-3 capitalize">{portfolio?.status ?? "—"}</td>
+                <td className="px-3">
+                  {portfolio?.status
+                    ? getStudentStatusLabel(portfolio.status)
+                    : "—"}
+                </td>
               </tr>
             );
           })}

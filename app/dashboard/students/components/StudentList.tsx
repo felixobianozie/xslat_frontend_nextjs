@@ -67,6 +67,7 @@ import StudentChangeArmPanel from "./Studentchangearmpanel";
 import StudentBulkAssignArmPanel from "./Studentbulkassignarmpanel";
 import StudentRemoveFromArmDialog from "./Studentremovefromarmdialog";
 import StudentPrintTemplate from "./Studentprinttemplate";
+import StudentStatusPill from "./Studentstatuspill";
 import Paginator, { PAGE_SIZE } from "../../components/Paginator";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
@@ -942,17 +943,7 @@ export default function StudentList({ initialData }: StudentListProps) {
 
                             {/* Status */}
                             <td className="px-5">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  portfolio?.status === "active"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-yellow-50 text-yellow-700"
-                                }`}
-                              >
-                                {portfolio?.status === "active"
-                                  ? "Active"
-                                  : "Inactive"}
-                              </span>
+                              <StudentStatusPill status={portfolio?.status} />
                             </td>
 
                             {/* Action menu */}
@@ -1067,17 +1058,7 @@ export default function StudentList({ initialData }: StudentListProps) {
 
                         {/* Status pill */}
                         <div className="flex items-center px-4 py-2.5">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              portfolio?.status === "active"
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-yellow-50 text-yellow-700"
-                            }`}
-                          >
-                            {portfolio?.status === "active"
-                              ? "Active"
-                              : "Inactive"}
-                          </span>
+                          <StudentStatusPill status={portfolio?.status} />
                         </div>
                       </div>
                     );

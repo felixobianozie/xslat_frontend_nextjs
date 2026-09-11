@@ -19,12 +19,23 @@ interface StudentSchool {
 
 // A student portfolio — one record per (student, school) pair.
 // Mirrors StudentPortfolioSerializer with the list-view field set.
-// `status` is "inactive" by default until the student is assigned to an arm.
+// `status` follows the 9-value backend enum on StudentPortfolio.STATUS,
+// partitioned by the backend into active-family and inactive-family
+// flavours (see the model's Business Rule 3 for details).
 // `current` marks which portfolio is the active one for the student.
 interface StudentPortfolio {
   id: string;
   reg_numb: string | null;
-  status: "active" | "inactive";
+  status:
+    | "active"
+    | "inactive"
+    | "graduated"
+    | "withdrawn"
+    | "suspended"
+    | "expelled"
+    | "transferred_in"
+    | "transferred_out"
+    | "probation";
   boarding: boolean;
   current: boolean;
   school: StudentSchool;
