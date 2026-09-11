@@ -4,7 +4,7 @@
 // ClassMembersTab.tsx
 //
 // First tab — lists every student currently enrolled in this arm and exposes
-// row-level actions (view profile, edit subjects).
+// row-level actions (view profile, edit subjects, remove from class).
 //
 // Toolbar:
 //  - Backend-powered search with an explicit submit action (mirrors the
@@ -22,16 +22,17 @@
 //  - GET student/list/?school-id=…&arm-id=…[&search=…][&ordering=…]
 //    Applies the search + ordering server-side; the tab renders whatever the
 //    backend returns with no client-side filtering or reordering.
+//  - PUT arm/detail/roster/ with remove_student to remove a member. Fires
+//    from the row action menu via ClassMemberRemoveFromArmDialog.
 //
-// Class-arm membership changes (remove from class, change class) are
-// intentionally NOT included here — the /students module owns those flows
-// (ChangeArmPanel + StudentRemoveFromArmDialog). Use View Profile to jump
-// into the student record and act from there.
+// Change Class remains on the /students module — that flow owns transfers
+// between arms and is not duplicated here. The remove dialog surfaces a
+// link to the Students page for users who want the transfer path instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useReactToPrint } from "react-to-print";
 import {
   ArrowUpDown,
@@ -50,6 +51,7 @@ import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ClassMemberActionMenu from "./Classmemberactionmenu";
+import ClassMemberRemoveFromArmDialog from "./Classmemberremovefromarmdialog";
 import AddClassMemberPanel from "./Addclassmemberpanel";
 import EditStudentSubjectsPanel from "./Editstudentsubjectspanel";
 
@@ -210,6 +212,7 @@ function buildPrintHeader(arm: ClassArm | null): {
 
 export default function ClassMembersTab() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { clientAuthFetch } = useClientAuthFetch();
   const { armId, arm } = useArmDetails();
 
@@ -228,6 +231,7 @@ export default function ClassMembersTab() {
 
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [showEditSubjectsPanel, setShowEditSubjectsPanel] = useState(false);
+  const [showRemoveArmDialog, setShowRemoveArmDialog] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<ArmStudent | null>(
     null,
   );
@@ -332,6 +336,74 @@ export default function ClassMembersTab() {
   function handleEditPanelClose() {
     setShowEditSubjectsPanel(false);
     setSelectedStudent(null);
+  }
+
+  // ── Remove-from-class flow ────────────────────────────────────────────────
+  // The arm being removed from is always this tab's arm (from context) — no
+  // per-student lookup needed. On success, invalidate every cache that
+  // reflects roster membership so the tab, the arm-detail header, related
+  // panels, and the /students page all update the next time they're viewed.
+  const removeArmMutation = useMutation({
+    mutationFn: async ({
+      studentId,
+      armId: targetArmId,
+    }: {
+      studentId: string;
+      armId: string;
+    }) => {
+      const { data, error } = await clientAuthFetch("arm/detail/roster/", {
+        method: "PUT",
+        body: {
+          id: targetArmId,
+          school_id: SCHOOL_ID,
+          remove_student: [studentId],
+        },
+      });
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Student removed from class.");
+      // This tab's roster.
+      queryClient.invalidateQueries({ queryKey: ["arm-students", armId] });
+      // Arm-detail header (student count and any other derived values).
+      queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      // Class assessment aggregates — a removed student's rows are gone.
+      queryClient.invalidateQueries({
+        queryKey: ["arm-assessment-compute", armId],
+      });
+      // Add Class Member panel's pool of arm-less students grows by one.
+      queryClient.invalidateQueries({ queryKey: ["students-without-arm"] });
+      // /students page — the student now shows as unenrolled there too.
+      queryClient.invalidateQueries({ queryKey: ["students", SCHOOL_ID] });
+      queryClient.invalidateQueries({ queryKey: ["student-stats", SCHOOL_ID] });
+      setShowRemoveArmDialog(false);
+      setSelectedStudent(null);
+    },
+    onError: (err) => {
+      toast.error(
+        err instanceof Error ? err.message : "Could not remove student.",
+      );
+    },
+  });
+
+  function handleRemoveFromClass(student: ArmStudent) {
+    setSelectedStudent(student);
+    setShowRemoveArmDialog(true);
+  }
+
+  function handleRemoveDialogClose() {
+    if (removeArmMutation.isPending) return;
+    setShowRemoveArmDialog(false);
+    setSelectedStudent(null);
+  }
+
+  function handleRemoveDialogConfirm() {
+    if (!selectedStudent || !armId) return;
+    removeArmMutation.mutate({
+      studentId: selectedStudent.id,
+      armId,
+    });
   }
 
   const aPanelIsOpen = showAddPanel || showEditSubjectsPanel;
@@ -575,6 +647,9 @@ export default function ClassMembersTab() {
                               studentId={student.id}
                               onView={() => handleViewProfile(student)}
                               onEditSubjects={() => handleEditSubjects(student)}
+                              onRemoveFromClass={() =>
+                                handleRemoveFromClass(student)
+                              }
                             />
                           </td>
                         </tr>
@@ -633,6 +708,7 @@ export default function ClassMembersTab() {
                         studentId={student.id}
                         onView={() => handleViewProfile(student)}
                         onEditSubjects={() => handleEditSubjects(student)}
+                        onRemoveFromClass={() => handleRemoveFromClass(student)}
                       />
                     </div>
                   ))
@@ -653,6 +729,19 @@ export default function ClassMembersTab() {
           onClose={handleEditPanelClose}
         />
       </div>
+
+      {/* ── Remove-from-class dialog ──────────────────────────────────────
+          Modal (not a slide-in panel), so it's mounted outside the tab's
+          main flex container and doesn't participate in the aPanelIsOpen
+          collapse animation. */}
+      <ClassMemberRemoveFromArmDialog
+        open={showRemoveArmDialog}
+        student={selectedStudent}
+        arm={arm}
+        isPending={removeArmMutation.isPending}
+        onClose={handleRemoveDialogClose}
+        onConfirm={handleRemoveDialogConfirm}
+      />
 
       {/* Hidden print template — replicates the on-screen column structure
           (S/N, Name, Student ID, Gender) minus the row action menu.

@@ -8,22 +8,24 @@
 // and stays positioned relative to its trigger during scroll/resize.
 //
 // Actions:
-//   onView          → navigate to /dashboard/student?id=…
-//   onEditSubjects  → open the Edit Student Subjects panel
+//   onView            → navigate to /dashboard/student?id=…
+//   onEditSubjects    → open the Edit Student Subjects panel
+//   onRemoveFromClass → open the Remove From Class confirmation dialog
 //
-// Note: class-arm membership changes (remove, change class) are intentionally
-// owned by the student-management module. They are reachable via the student
-// profile and are deliberately NOT exposed from the arm side.
+// Change Class is not exposed here — that flow lives on the /students module,
+// which owns transfers between arms. The Remove dialog surfaces a link to
+// the Students page for users who want the transfer path instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Eye, MoreHorizontal } from "lucide-react";
+import { BookOpen, Eye, MoreHorizontal, UserMinus } from "lucide-react";
 
 interface ClassMemberActionMenuProps {
   studentId: string;
   onView: () => void;
   onEditSubjects: () => void;
+  onRemoveFromClass: () => void;
 }
 
 const PANEL_WIDTH = 200;
@@ -32,6 +34,7 @@ export default function ClassMemberActionMenu({
   studentId,
   onView,
   onEditSubjects,
+  onRemoveFromClass,
 }: ClassMemberActionMenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -120,6 +123,19 @@ export default function ClassMemberActionMenu({
                 setOpen(false);
               }}
             />
+            {/* Remove from Class is the destructive action and sits last,
+                visually separated so it isn't clicked by mistake. */}
+            <div className="border-t border-slate-50 mt-1 pt-1">
+              <MenuItem
+                icon={<UserMinus size={13} />}
+                label="Remove from Class"
+                danger
+                onClick={() => {
+                  onRemoveFromClass();
+                  setOpen(false);
+                }}
+              />
+            </div>
             <span
               aria-hidden="true"
               className="absolute left-full top-2.5 border-[7px] border-t-transparent border-b-transparent border-r-transparent border-l-white"

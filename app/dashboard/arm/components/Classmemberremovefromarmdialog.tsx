@@ -1,41 +1,58 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// StudentRemoveFromArmDialog.tsx
+// ClassMemberRemoveFromArmDialog.tsx
 //
-// Confirmation modal shown before removing a student from their current class
-// arm. Replaces the draft's native <dialog> + DaisyUI modal with a fully
-// Tailwind-styled overlay so we stay within the project's styling constraints.
+// Confirmation modal shown before removing a student from the class arm they
+// currently belong to. Mirrors StudentRemoveFromArmDialog on the /students
+// module for visual + copy consistency, with two key differences:
+//   - The arm being removed from comes from the arm-detail page's context
+//     rather than the student record. Every row on this tab is already
+//     scoped to the same arm, so the caller passes that arm in directly.
+//   - The "Change Class" recommendation points to the /students page,
+//     because Change Class is owned by the students module and isn't
+//     available from the arm side.
 //
 // Backend reference (PUT arm/detail/roster/):
 //   Body: { id: <arm_uuid>, school_id, remove_student: [<student_uuid>] }
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
 import ButtonLoader from "../../components/Buttonloader";
 
-interface StudentRemoveFromArmDialogProps {
+interface ClassMemberRemoveFromArmDialogProps {
   open: boolean;
-  student: StudentRecord | null;
+  /** The student being removed. Null while no row action is in flight. */
+  student: ArmStudent | null;
+  /** The arm the student is being removed from — resolved from the arm-detail
+   *  page context by the caller. Null before the arm has loaded. */
+  arm: ClassArm | null;
   isPending: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
 
-function formatArm(arm: ClassArm | null | undefined): string {
+// Compact "SEC-abbr LVL-abbr ARM-abbr" (e.g. "JSS 2 A"). Falls back to a
+// friendly generic when the arm chain isn't available yet so downstream
+// copy still reads naturally.
+function formatArm(arm: ClassArm | null): string {
   if (!arm) return "their class";
   return `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`;
 }
 
-export default function StudentRemoveFromArmDialog({
+export default function ClassMemberRemoveFromArmDialog({
   open,
   student,
+  arm,
   isPending,
   onClose,
   onConfirm,
-}: StudentRemoveFromArmDialogProps) {
-  // Close on Escape — small accessibility win for keyboard users.
+}: ClassMemberRemoveFromArmDialogProps) {
+  // Close on Escape — small accessibility win for keyboard users. Ignored
+  // while the mutation is in flight so a stray keypress can't dismiss the
+  // dialog mid-request and leave the user unsure whether it succeeded.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -47,7 +64,10 @@ export default function StudentRemoveFromArmDialog({
 
   if (!open) return null;
 
-  const armLabel = formatArm(student?.current_arm);
+  const armLabel = formatArm(arm);
+  const studentName = student
+    ? `${student.last_name} ${student.first_name} ${student.middle_name}`
+    : "this student";
 
   return (
     <div
@@ -55,14 +75,15 @@ export default function StudentRemoveFromArmDialog({
       className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="remove-arm-title"
+      aria-labelledby="class-member-remove-title"
       // Backdrop click closes the dialog when not in flight.
       onClick={() => {
         if (!isPending) onClose();
       }}
     >
       <div
-        // stopPropagation so clicks inside the dialog don't trigger the backdrop close
+        // stopPropagation so clicks inside the dialog don't trigger the
+        // backdrop close.
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden"
       >
@@ -73,7 +94,7 @@ export default function StudentRemoveFromArmDialog({
               <AlertTriangle size={16} className="text-red-500" />
             </div>
             <h2
-              id="remove-arm-title"
+              id="class-member-remove-title"
               className="text-sm font-bold text-slate-800"
             >
               Remove from Class
@@ -93,11 +114,7 @@ export default function StudentRemoveFromArmDialog({
         <div className="px-5 py-5 text-xs text-slate-700 leading-relaxed space-y-3">
           <p>
             You are about to remove{" "}
-            <span className="font-semibold text-slate-900">
-              {student
-                ? `${student.last_name} ${student.first_name} ${student.middle_name}`
-                : "this student"}
-            </span>{" "}
+            <span className="font-semibold text-slate-900">{studentName}</span>{" "}
             from{" "}
             <span className="font-semibold text-slate-900">{armLabel}</span>.
           </p>
@@ -120,9 +137,14 @@ export default function StudentRemoveFromArmDialog({
             />
             <p className="text-[11px] text-emerald-700">
               <span className="font-semibold">Recommendation:</span> to keep the
-              existing data, use{" "}
-              <span className="font-semibold">Change Class</span> instead. It
-              transfers the data to the new class.
+              existing data, use Change Class from the{" "}
+              <Link
+                href="/dashboard/students"
+                className="font-semibold underline underline-offset-2 hover:text-emerald-800"
+              >
+                Students page
+              </Link>{" "}
+              instead. It transfers the data to the new class.
             </p>
           </div>
 
