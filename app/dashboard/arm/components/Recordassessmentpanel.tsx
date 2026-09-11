@@ -73,6 +73,20 @@ import type { ApiEnvelope } from "../page";
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 const STUDENTS_PAGE_SIZE = 100;
 
+// Backend `?ordering=` value applied to the roster fetch. Gender-descending
+// primary sort (O → M → F) surfaces male students before female ones; names
+// stay alphabetical inside each gender bucket so the list still reads
+// naturally when scanned. Matches the /dashboard/arm ClassMembersTab default
+// so React Query can reuse a hot cache when that tab has already fetched.
+const ROSTER_ORDERING = "-gender,last_name,first_name";
+
+// Human labels for the single-letter gender codes returned by the backend.
+const GENDER_LABELS: Record<string, string> = {
+  M: "Male",
+  F: "Female",
+  O: "Other",
+};
+
 // ── Local response shape for the paginated student endpoint ──────────────────
 interface PaginatedResponse<T> {
   message: string;
@@ -114,14 +128,18 @@ export default function RecordAssessmentPanel({
     return [...u].sort((a, b) => a.display_order - b.display_order);
   }, [arm]);
 
-  // Class roster — same query key as ClassMembersTab so React Query reuses
-  // its cache when the user has already visited that tab.
+  // Class roster — query key shape mirrors ClassMembersTab's ["arm-students",
+  // armId, sortValue, appliedSearch] key so React Query reuses the cache when
+  // that tab is in its default state (gender_desc + no search).
   const { data: rosterData, isLoading: rosterLoading } = useQuery<
     PaginatedResponse<ArmStudent>
   >({
-    queryKey: ["arm-students", armId],
+    queryKey: ["arm-students", armId, "gender_desc", ""],
     queryFn: async () => {
-      const url = `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}&page-size=${STUDENTS_PAGE_SIZE}`;
+      const url =
+        `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}` +
+        `&page-size=${STUDENTS_PAGE_SIZE}` +
+        `&ordering=${encodeURIComponent(ROSTER_ORDERING)}`;
       const { data, error } =
         await clientAuthFetch<PaginatedResponse<ArmStudent>>(url);
       if (error) throw new Error(error.message);
@@ -435,9 +453,19 @@ export default function RecordAssessmentPanel({
                             {student.last_name} {student.first_name}{" "}
                             {student?.middle_name ?? ""}
                           </p>
-                          {student.public_id && (
-                            <p className="text-[11px] text-slate-400 font-mono truncate transition-colors group-focus-within:text-violet-500">
-                              {student.public_id}
+                          {(student.public_id || student.gender) && (
+                            <p className="text-[11px] text-slate-400 truncate transition-colors group-focus-within:text-violet-500 flex items-center gap-1.5">
+                              {student.public_id && (
+                                <span className="font-mono truncate">
+                                  {student.public_id}
+                                </span>
+                              )}
+                              {student.public_id && student.gender && (
+                                <span aria-hidden="true">·</span>
+                              )}
+                              {student.gender && (
+                                <span>{GENDER_LABELS[student.gender]}</span>
+                              )}
                             </p>
                           )}
                         </div>
@@ -599,9 +627,19 @@ export default function RecordAssessmentPanel({
                                 {student.last_name} {student.first_name}{" "}
                                 {student?.middle_name ?? ""}
                               </span>
-                              {student.public_id && (
-                                <span className="text-[10px] text-slate-400 font-mono transition-colors group-focus-within:text-violet-500">
-                                  {student.public_id}
+                              {(student.public_id || student.gender) && (
+                                <span className="text-[10px] text-slate-400 transition-colors group-focus-within:text-violet-500 flex items-center gap-1.5">
+                                  {student.public_id && (
+                                    <span className="font-mono">
+                                      {student.public_id}
+                                    </span>
+                                  )}
+                                  {student.public_id && student.gender && (
+                                    <span aria-hidden="true">·</span>
+                                  )}
+                                  {student.gender && (
+                                    <span>{GENDER_LABELS[student.gender]}</span>
+                                  )}
                                 </span>
                               )}
                             </div>

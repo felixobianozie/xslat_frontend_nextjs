@@ -1,0 +1,20 @@
+zip -r xslat_frontend.zip . \
+  -x "node_modules/*" \
+  -x ".next/*" \
+  -x "out/*" \
+  -x "dist/*" \
+  -x "build/*" \
+  -x ".env" \
+  -x ".env.*" \
+  -x ".git/*" \
+  -x ".gitignore" \
+  -x ".DS_Store" \
+  -x "*.log" \
+  -x "npm-debug.log*" \
+  -x "yarn-debug.log*" \
+  -x "yarn-error.log*" \
+  -x "pnpm-debug.log*" \
+  -x "coverage/*" \
+  -x ".turbo/*" \
+  -x ".vercel/*" \
+  -x "*copy*"

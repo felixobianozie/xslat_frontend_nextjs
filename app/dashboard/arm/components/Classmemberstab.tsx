@@ -6,16 +6,22 @@
 // First tab — lists every student currently enrolled in this arm and exposes
 // row-level actions (view profile, edit subjects).
 //
-// Mirrors the /arms list pattern:
-//  - Toolbar (search + print + Add Member)
-//  - Desktop table + mobile card list
-//  - Slide-in panels (Add Member, Edit Subjects) collapse the list while open
+// Toolbar:
+//  - Backend-powered search with an explicit submit action (mirrors the
+//    /students list). Typing alone never fires a request — only clicking the
+//    submit icon or pressing Enter does. A clear (X) resets the applied
+//    search and refetches.
+//  - Sort dropdown backed by the ?ordering= whitelist on student/list/. The
+//    default is Gender (Z → A) so male students appear before female ones.
+//  - Print button, hidden below sm so the phone toolbar stays compact.
+//  - Add Member (primary action) sits at the visual leftmost slot on mobile
+//    via `order-first` to keep the sort dropdown near the right edge, then
+//    returns to its natural rightmost slot on md+.
 //
 // Backend wiring:
-//  - GET student/list/?school-id=…&arm-id=…       → load roster
-//
-// Backend gaps that surface as "feature in the works" toasts:
-//  - PDF download: no server-side PDF generation endpoint exists yet.
+//  - GET student/list/?school-id=…&arm-id=…[&search=…][&ordering=…]
+//    Applies the search + ordering server-side; the tab renders whatever the
+//    backend returns with no client-side filtering or reordering.
 //
 // Class-arm membership changes (remove from class, change class) are
 // intentionally NOT included here — the /students module owns those flows
@@ -23,18 +29,19 @@
 // into the student record and act from there.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useReactToPrint } from "react-to-print";
 import {
-  BookOpen,
-  Users,
-  Download,
+  ArrowUpDown,
+  Check,
   Plus,
   Printer,
   Search,
+  Users,
   UserRound,
+  X,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -50,19 +57,73 @@ import EditStudentSubjectsPanel from "./Editstudentsubjectspanel";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
-// Shown whenever the user triggers a button whose backend endpoint isn't built
-// yet. Kept centralised so the wording stays consistent everywhere.
-const FEATURE_IN_WORKS = "This feature is currently in the works.";
-
-// The student/list/ endpoint is paginated, default page size 10. We pull a
-// generous page so the roster comes back in a single request — class sizes
-// above 100 would need true pagination here, which is acceptable as a future
-// refinement rather than a launch blocker.
+// The student/list/ endpoint is paginated (default page size 10). A single
+// generous request keeps the whole roster on-screen without a paginator —
+// class sizes above 100 would need true pagination, which is acceptable as
+// a future refinement rather than a launch blocker.
 const ROSTER_PAGE_SIZE = 100;
 
+// ── Gender labels ────────────────────────────────────────────────────────────
+const GENDER_LABELS: Record<string, string> = {
+  M: "Male",
+  F: "Female",
+  O: "Other",
+};
+
+// ── Sort options — mapped 1:1 to backend's ?ordering= whitelist ──────────────
+// Backend whitelist for GET student/list/ ordering is
+//   {last_name, first_name, gender, created_on}.
+// A stable id tiebreaker is always appended server-side so pagination cannot
+// duplicate or skip rows on ties. Set kept identical to the /students list
+// so behaviour is consistent across pages.
+type SortValue =
+  | "name_asc"
+  | "name_desc"
+  | "gender_asc"
+  | "gender_desc"
+  | "newest"
+  | "oldest";
+
+const SORT_OPTIONS: {
+  label: string;
+  value: SortValue;
+  ordering: string;
+}[] = [
+  {
+    label: "Name (A → Z)",
+    value: "name_asc",
+    ordering: "last_name,first_name",
+  },
+  {
+    label: "Name (Z → A)",
+    value: "name_desc",
+    ordering: "-last_name,-first_name",
+  },
+  // Gender first (F → M → O), then alphabetical within each bucket so the
+  // secondary order is meaningful rather than falling back to the server's
+  // id tiebreaker.
+  {
+    label: "Gender (A → Z)",
+    value: "gender_asc",
+    ordering: "gender,last_name,first_name",
+  },
+  // Gender reversed (O → M → F). Male appears before Female by construction,
+  // matching the requested default sort for this tab.
+  {
+    label: "Gender (Z → A)",
+    value: "gender_desc",
+    ordering: "-gender,last_name,first_name",
+  },
+  { label: "Newest first", value: "newest", ordering: "-created_on" },
+  { label: "Oldest first", value: "oldest", ordering: "created_on" },
+];
+
+// Default sort on this tab — surfaces male students first as requested.
+const DEFAULT_SORT: SortValue = "gender_desc";
+
 // ── Local response shape for the paginated student endpoint ──────────────────
-// Mirrors xslat_backend.pagination.StandardPagination's envelope. Note: when
-// the school has no current term, the endpoint returns a flat { message, data }
+// Mirrors xslat_backend.pagination.StandardPagination's envelope. When the
+// school has no current term, the endpoint returns a flat { message, data }
 // instead — both shapes carry `data`, so reading `response.data` still works.
 interface PaginatedResponse<T> {
   message: string;
@@ -79,30 +140,135 @@ function fullName(s: ArmStudent): string {
   return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
 }
 
+// Build the GET student/list/ URL from the tab's current state. Only params
+// with a real value are appended so the URL stays minimal for the common
+// "default sort, no search" case.
+function buildRosterUrl(
+  armId: string,
+  sortValue: SortValue,
+  appliedSearch: string,
+): string {
+  const params = new URLSearchParams({
+    "school-id": SCHOOL_ID,
+    "arm-id": armId,
+    page: "1",
+    "page-size": String(ROSTER_PAGE_SIZE),
+  });
+
+  const ordering = SORT_OPTIONS.find((s) => s.value === sortValue)?.ordering;
+  if (ordering) {
+    params.set("ordering", ordering);
+  }
+
+  const q = appliedSearch.trim();
+  if (q) {
+    params.set("search", q);
+  }
+
+  return `student/list/?${params.toString()}`;
+}
+
+// Compact "section-abbr level-abbr arm-abbr" (e.g. "JSS 2 A") — the arm's
+// human-facing identifier used across the print header and its filename.
+function formatArmLabel(arm: ClassArm | null): string {
+  if (!arm) return "";
+  return `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`;
+}
+
+// Pull the school name off the arm's nested chain. Present on every
+// arm/detail/ response (via include_school_fields), so this needs no
+// separate backend request. Returns null when the arm hasn't loaded yet
+// or the chain is unexpectedly incomplete.
+function getSchoolName(arm: ClassArm | null): string | null {
+  return arm?.level.section.term?.session.school.name ?? null;
+}
+
+// Build the printed document's filename / print-dialog title. Used by
+// react-to-print as documentTitle. Kept concise and filename-safe: the
+// arm identifier is the leading token so the file sorts by class arm
+// when saved. Falls back gracefully when either piece is still loading.
+function buildPrintTitle(arm: ClassArm | null): string {
+  const armLabel = formatArmLabel(arm);
+  const schoolName = getSchoolName(arm);
+  const base = armLabel ? `${armLabel} Class Roster` : "Class Roster";
+  return schoolName ? `${base} - ${schoolName}` : base;
+}
+
+// Build the printed document's on-page header. Splits the arm label from the
+// rest of the line so the caller can style the arm label at a larger size
+// (per the requested visual hierarchy). Returns an object rather than JSX so
+// this stays a plain helper — the caller composes the actual elements.
+function buildPrintHeader(arm: ClassArm | null): {
+  armLabel: string;
+  rest: string;
+} {
+  const armLabel = formatArmLabel(arm);
+  const schoolName = getSchoolName(arm);
+  const rest = schoolName ? `CLASS ROSTER OF ${schoolName}` : "CLASS ROSTER";
+  return { armLabel, rest };
+}
+
 export default function ClassMembersTab() {
   const router = useRouter();
   const { clientAuthFetch } = useClientAuthFetch();
   const { armId, arm } = useArmDetails();
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState("");
+
+  // Two search states: `searchInput` is what the user is typing (never sent
+  // to the backend by itself); `appliedSearch` is what the current backend
+  // request is scoped by. They diverge while the user is typing and re-sync
+  // when Submit is pressed or Clear is clicked. Keeping them separate is
+  // what lets us "avoid unnecessary requests while the user is typing".
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const [sortValue, setSortValue] = useState<SortValue>(DEFAULT_SORT);
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [showEditSubjectsPanel, setShowEditSubjectsPanel] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<ArmStudent | null>(
     null,
   );
 
-  // Print
+  // Refs
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  const handlePrint = useReactToPrint({ contentRef: printRef });
+
+  // Print — documentTitle is the print-preview name and the default filename
+  // when saving to PDF. Function form keeps it current with the latest `arm`
+  // (school name is read off the arm chain so no extra request is needed).
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: () => buildPrintTitle(arm),
+  });
+
+  // Close the sort dropdown when the user clicks anywhere outside it.
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (
+        sortDropdownRef.current &&
+        !sortDropdownRef.current.contains(e.target as Node)
+      ) {
+        setSortDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
 
   // ── Data ──────────────────────────────────────────────────────────────────
+  // Query key covers every param sent to the backend, so any change to the
+  // arm, sort, or applied (submitted) search triggers a fresh fetch.
+  // `searchInput` is deliberately NOT in the key: typing must not fire
+  // requests — only Submit / Clear can.
   const { data, isPending, isError, error } = useQuery<
     PaginatedResponse<ArmStudent>
   >({
-    queryKey: ["arm-students", armId],
+    queryKey: ["arm-students", armId, sortValue, appliedSearch],
     queryFn: async () => {
-      const url = `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}&page=1&page-size=${ROSTER_PAGE_SIZE}`;
+      const url = buildRosterUrl(armId, sortValue, appliedSearch);
       const { data, error } =
         await clientAuthFetch<PaginatedResponse<ArmStudent>>(url);
       if (error) throw new Error(error.message);
@@ -122,20 +288,36 @@ export default function ClassMembersTab() {
   }, [isError, error]);
 
   const students = data?.data ?? [];
-
-  // Apply client-side text search across name + public id.
-  const visibleStudents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter((s) => {
-      return (
-        fullName(s).toLowerCase().includes(q) ||
-        (s.public_id ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [students, searchQuery]);
+  // Total from the backend when available (paginated envelope); falls back to
+  // the returned array length when the "no current term" branch trims off
+  // the pagination metadata.
+  const totalStudents = data?.count ?? students.length;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  // Submit the current search input to the backend. Called by the submit
+  // button and by pressing Enter inside the input (via the wrapping form).
+  function handleSearchSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    const q = searchInput.trim();
+    // Skip the round-trip when the submitted value hasn't actually changed —
+    // React Query would just return the cached page anyway.
+    if (q === appliedSearch) return;
+    setAppliedSearch(q);
+  }
+
+  // Clear both the input and the active backend search.
+  function handleSearchClear() {
+    setSearchInput("");
+    if (appliedSearch !== "") {
+      setAppliedSearch("");
+    }
+  }
+
+  function handleSortChange(s: SortValue) {
+    setSortValue(s);
+    setSortDropdownOpen(false);
+  }
 
   function handleViewProfile(student: ArmStudent) {
     // Student profile page route — adjust if the project uses a different path.
@@ -147,18 +329,20 @@ export default function ClassMembersTab() {
     setShowEditSubjectsPanel(true);
   }
 
-  // PDF download endpoint isn't built yet — same placeholder pattern used on
-  // the /arms list page.
-  function handleDownloadPdf() {
-    toast.info(FEATURE_IN_WORKS);
-  }
-
   function handleEditPanelClose() {
     setShowEditSubjectsPanel(false);
     setSelectedStudent(null);
   }
 
   const aPanelIsOpen = showAddPanel || showEditSubjectsPanel;
+
+  // Label for the sort dropdown button.
+  const activeSortLabel =
+    SORT_OPTIONS.find((o) => o.value === sortValue)?.label ?? "Sort";
+
+  // True when the user has typed something they haven't submitted yet — used
+  // to disable the submit button when it wouldn't do anything.
+  const hasUnsubmittedSearch = searchInput.trim() !== appliedSearch;
 
   return (
     <>
@@ -169,44 +353,122 @@ export default function ClassMembersTab() {
             aPanelIsOpen ? "w-0 opacity-0 h-0" : "w-full opacity-100"
           }`}
         >
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row gap-2 mb-6">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search
-                size={13}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-              />
-              <input
-                type="text"
-                placeholder="Search by name or ID…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs text-slate-600 border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
-              />
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 justify-end">
+          {/* ── Toolbar ─────────────────────────────────────────────────── */}
+          {/* Two groups: the search form and a single right-aligned action
+              row (Sort, Print, Add Member). Add Member uses `order-first` on
+              mobile so it takes the leftmost visual slot, keeping the Sort
+              dropdown near the right edge where its `right-0` menu has room
+              to extend leftward. On md+ the natural DOM order is restored. */}
+          <div className="flex flex-col lg:flex-row gap-2 mb-6">
+            {/* Search input + Submit button — wrapped in a form so pressing
+                Enter inside the input triggers the same submit path as the
+                button. Typing alone never fires a request. */}
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex gap-2 flex-1 min-w-0"
+              role="search"
+              aria-label="Search class members"
+            >
+              <div className="relative flex-1 min-w-0">
+                <Search
+                  size={13}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Search by name or ID…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  aria-label="Search class members by name or ID"
+                  className="w-full pl-8 pr-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+                />
+                {(searchInput || appliedSearch) && (
+                  <button
+                    type="button"
+                    onClick={handleSearchClear}
+                    aria-label="Clear search"
+                    className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              {/* Icon-only submit — the input's placeholder + label carry the
+                  "search" meaning, so the button just needs an aria-label. */}
               <button
-                onClick={handleDownloadPdf}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors cursor-pointer"
-                title="Download PDF"
+                type="submit"
+                disabled={!hasUnsubmittedSearch}
+                aria-label="Search"
+                title="Search"
+                className="cursor-pointer flex items-center justify-center px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm shadow-violet-200"
               >
-                <Download size={12} />
-                <span className="hidden sm:inline">PDF</span>
+                <Search size={14} />
               </button>
+            </form>
+
+            {/* Action group — sort, print, and the primary Add Member button */}
+            <div className="flex gap-2 justify-end">
+              {/* Sort dropdown */}
+              <div ref={sortDropdownRef} className="relative">
+                <button
+                  onClick={() => setSortDropdownOpen((o) => !o)}
+                  aria-haspopup="menu"
+                  aria-expanded={sortDropdownOpen}
+                  className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
+                    sortValue !== DEFAULT_SORT
+                      ? "border-violet-400 bg-violet-50 text-violet-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
+                  }`}
+                >
+                  <ArrowUpDown size={12} />
+                  <span className="hidden sm:inline">{activeSortLabel}</span>
+                  <span className="sm:hidden">Sort</span>
+                </button>
+
+                {sortDropdownOpen && (
+                  <div
+                    role="menu"
+                    className="absolute top-10 right-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-44 sm:w-52 py-1"
+                  >
+                    {SORT_OPTIONS.map((opt) => {
+                      const isActive = sortValue === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          role="menuitem"
+                          onClick={() => handleSortChange(opt.value)}
+                          className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
+                            isActive
+                              ? "bg-violet-50 text-violet-700 font-semibold"
+                              : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isActive && <Check size={12} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Print — hidden below sm to keep the phone toolbar compact;
+                  visible from small tablets up through desktop. */}
               <button
                 onClick={() => handlePrint()}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors cursor-pointer"
+                className="cursor-pointer hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors"
                 title="Print"
               >
                 <Printer size={12} />
                 <span className="hidden sm:inline">Print</span>
               </button>
+
+              {/* Add Member — leftmost on mobile via order-first so the sort
+                  dropdown's right-0 menu has room to extend leftward. Returns
+                  to its natural rightmost slot on md+. */}
               <button
                 onClick={() => setShowAddPanel(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200 cursor-pointer"
+                className="cursor-pointer order-first md:order-0 flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
               >
                 <Plus size={12} />
                 <span>Add Member</span>
@@ -214,12 +476,35 @@ export default function ClassMembersTab() {
             </div>
           </div>
 
+          {/* ── Active-search pill ──────────────────────────────────────── */}
+          {/* Confirms to the user which query the current results are scoped
+              to and offers a one-click way out. Shown only when there's an
+              active backend search in effect. */}
+          {appliedSearch && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
+              <span>Showing results for</span>
+              <span className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1 font-medium">
+                <span className="truncate max-w-55">
+                  &ldquo;{appliedSearch}&rdquo;
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSearchClear}
+                  aria-label="Clear search"
+                  className="cursor-pointer text-violet-500 hover:text-violet-800 transition-colors"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            </div>
+          )}
+
           {/* Count strip */}
           <div className="text-[11px] text-slate-500 mb-3 flex items-center gap-1.5">
             <Users size={11} />
             {isPending
               ? "Loading…"
-              : `${visibleStudents.length} of ${students.length} student${students.length === 1 ? "" : "s"}`}
+              : `${totalStudents} student${totalStudents === 1 ? "" : "s"}`}
           </div>
 
           {/* List */}
@@ -235,30 +520,31 @@ export default function ClassMembersTab() {
                       <th className="px-5 py-3 font-semibold w-16">S/N</th>
                       <th className="px-5 py-3 font-semibold">Student</th>
                       <th className="px-5 py-3 font-semibold">Student ID</th>
+                      <th className="px-5 py-3 font-semibold">Gender</th>
                       <th className="px-5 py-3 font-semibold w-24">Action</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-50">
-                    {visibleStudents.length === 0 ? (
+                    {students.length === 0 ? (
                       <tr>
-                        <td colSpan={4}>
+                        <td colSpan={5}>
                           <EmptyState
-                            variant={searchQuery ? "search" : "generic"}
+                            variant={appliedSearch ? "search" : "generic"}
                             title={
-                              searchQuery
+                              appliedSearch
                                 ? "No results found"
                                 : "No class members yet"
                             }
                             description={
-                              searchQuery
-                                ? `No students match "${searchQuery}".`
+                              appliedSearch
+                                ? `No students match "${appliedSearch}".`
                                 : "Add students to populate the class roster."
                             }
                           />
                         </td>
                       </tr>
                     ) : (
-                      visibleStudents.map((student, index) => (
+                      students.map((student, index) => (
                         <tr
                           key={student.id}
                           className={`h-14 hover:bg-violet-50/40 transition-colors ${
@@ -279,6 +565,11 @@ export default function ClassMembersTab() {
                           <td className="px-5 text-slate-500 font-mono text-[11px]">
                             {student.public_id ?? "—"}
                           </td>
+                          <td className="px-5 text-slate-600">
+                            {student.gender
+                              ? (GENDER_LABELS[student.gender] ?? "—")
+                              : "—"}
+                          </td>
                           <td className="px-5">
                             <ClassMemberActionMenu
                               studentId={student.id}
@@ -295,20 +586,22 @@ export default function ClassMembersTab() {
 
               {/* Mobile cards */}
               <div className="flex flex-col gap-3 md:hidden">
-                {visibleStudents.length === 0 ? (
+                {students.length === 0 ? (
                   <EmptyState
-                    variant={searchQuery ? "search" : "generic"}
+                    variant={appliedSearch ? "search" : "generic"}
                     title={
-                      searchQuery ? "No results found" : "No class members yet"
+                      appliedSearch
+                        ? "No results found"
+                        : "No class members yet"
                     }
                     description={
-                      searchQuery
-                        ? `No students match "${searchQuery}".`
+                      appliedSearch
+                        ? `No students match "${appliedSearch}".`
                         : "Add students to populate the class roster."
                     }
                   />
                 ) : (
-                  visibleStudents.map((student) => (
+                  students.map((student) => (
                     <div
                       key={student.id}
                       className="bg-white border border-indigo-100 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3"
@@ -321,11 +614,19 @@ export default function ClassMembersTab() {
                           <span className="text-sm text-slate-800 truncate">
                             {fullName(student)}
                           </span>
-                          {student.public_id && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {student.public_id}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            {student.public_id && (
+                              <span className="font-mono">
+                                {student.public_id}
+                              </span>
+                            )}
+                            {student.public_id && student.gender && (
+                              <span aria-hidden="true">·</span>
+                            )}
+                            {student.gender && (
+                              <span>{GENDER_LABELS[student.gender]}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <ClassMemberActionMenu
@@ -353,34 +654,52 @@ export default function ClassMembersTab() {
         />
       </div>
 
-      {/* Hidden print template — reuses the student list shape */}
+      {/* Hidden print template — replicates the on-screen column structure
+          (S/N, Name, Student ID, Gender) minus the row action menu.
+          Layout parameters are tuned for print compactness so a typical
+          class of ~50 students fits within two printed pages: tighter
+          header padding and shorter row heights while keeping text-xs
+          readable. */}
       <div className="h-0 overflow-hidden">
         <div ref={printRef} className="m-8">
-          <h1 className="font-bold text-sm py-4 uppercase tracking-wide">
-            Class Members —{" "}
-            {arm
-              ? `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`
-              : ""}
-          </h1>
+          {/* Print header:
+                <ARM LABEL>   CLASS ROSTER OF <SCHOOL NAME>
+              Arm label is set in a much larger font than the rest so the
+              class arm is the first thing the eye lands on when scanning a
+              printed roster. `items-center` vertically centres the two
+              differently-sized spans so they read as one balanced heading. */}
+          {(() => {
+            const { armLabel, rest } = buildPrintHeader(arm);
+            return (
+              <h1 className="font-bold py-2 uppercase tracking-wide flex items-center gap-3 flex-wrap">
+                {armLabel && <span className="text-2xl">{armLabel}</span>}
+                <span className="text-sm">{rest}</span>
+              </h1>
+            );
+          })()}
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr className="border border-gray-300 text-left h-8">
+              <tr className="border border-gray-300 text-left h-7">
                 <th className="px-3">S/N</th>
                 <th className="px-3">Name</th>
                 <th className="px-3">Student ID</th>
+                <th className="px-3">Gender</th>
               </tr>
             </thead>
             <tbody>
-              {visibleStudents.map((s, index) => (
+              {students.map((s, index) => (
                 <tr
                   key={s.id}
-                  className={`h-9 border-b border-gray-200 ${
+                  className={`h-7 border-b border-gray-200 ${
                     index % 2 === 0 ? "bg-indigo-50" : ""
                   }`}
                 >
                   <td className="px-3">{index + 1}</td>
                   <td className="px-3">{fullName(s)}</td>
                   <td className="px-3">{s.public_id ?? "—"}</td>
+                  <td className="px-3">
+                    {s.gender ? (GENDER_LABELS[s.gender] ?? "—") : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

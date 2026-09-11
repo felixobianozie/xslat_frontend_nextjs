@@ -4,55 +4,55 @@
 // StudentList.tsx
 //
 // Renders the paginated student list.
-// Includes: search, filter (backend-aligned params), PDF download, print,
-// Create Student slide-in panel, Assign/Change Arm slide-in panels, a Remove
-// from Class confirmation modal, and bulk selection (with a contextual action
-// bar that opens the Bulk Assign Arm slide-in panel).
+// Includes: backend-driven search (submit-on-demand), backend filter, backend
+// sort, print, Create Student slide-in panel, Assign/Change Arm slide-in
+// panels, a Remove from Class confirmation modal, and bulk selection (with a
+// contextual action bar that opens the Bulk Assign Arm slide-in panel).
 //
 // Data layer:
-//  - initialData is the full server-fetched paginated envelope for page 1
-//    (gathered by the parent page via serverAuthFetch). total_pages, count,
-//    and the data array all come directly from the server — no client-side
-//    recomputation.
-//  - useQuery is the single source of truth after hydration. Pagination and
-//    backend-supported filters (gender, no-arm) are sent as URL query params.
-//    Portfolio-level filters (status, boarding) and text search are applied
-//    client-side to the current page since the backend list endpoint does not
-//    expose those as list params — a known limitation that mirrors how
-//    StaffList handles text search.
-//  - initialDataUpdatedAt: Date.now() tells React Query the server data is
-//    fresh so it skips an immediate background refetch on mount.
+//  - initialData is the full server-fetched paginated envelope for page 1 with
+//    no filter, no sort, and no search. total_pages, count, and the data array
+//    all come directly from the server — no client-side recomputation.
+//  - useQuery is the single source of truth after hydration. Search, filter,
+//    sort, and pagination are all sent as URL query params, so the query key
+//    includes every one of them and any change triggers a fresh backend fetch.
+//  - initialDataUpdatedAt is captured once at mount via a useState initializer
+//    (kept pure — the value is stable across re-renders) and tells React Query
+//    the server-supplied data is fresh so it skips an immediate background
+//    refetch when hydrating the initial state.
 //  - isPending drives the skeleton whenever there is no cached data for the
-//    current query key — covers initial load, page navigation, and filter
-//    changes.
+//    current query key — covers initial load, page navigation, filter/sort
+//    changes, and search submissions.
 //  - Mutations (assign / change / remove arm) use useMutation and invalidate
 //    the list + stats queries on success. The Remove-from-class mutation
-//    calls PUT arm/detail/roster/ with remove_student. Delete and Edit
-//    Subjects are not yet backed by endpoints, so they surface the shared
-//    "feature in the works" toast.
+//    calls PUT arm/detail/roster/ with remove_student. Delete is not yet
+//    backed by an endpoint, so it surfaces the shared "feature in the works"
+//    toast.
 //
 // Bulk selection:
 //  - `selectedIds` is a Set<string> kept in component state. It persists
 //    across page changes and filter changes because selection is keyed by
 //    student ID, not by row position.
-//  - The header checkbox toggles every row on the CURRENT PAGE only — it
+//  - The header checkbox toggles every row on the current page only — it
 //    shows an indeterminate state when some-but-not-all visible rows are
 //    selected.
 //  - When 2+ students are selected, a contextual action bar appears between
 //    the toolbar and the table with a Bulk Assign Arm button.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useReactToPrint } from "react-to-print";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Search,
   Filter,
-  Download,
+  ArrowUpDown,
   Printer,
   UserPlus,
   Users,
+  X,
+  Check,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
@@ -68,142 +68,139 @@ import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
 import type { PaginatedResponse } from "../page";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
-// Shown whenever the user triggers a button whose backend endpoint isn't built
-// yet. Kept centralised so the wording stays consistent everywhere.
-// Mirrors the same pattern used in StaffList.tsx and ArmList.tsx.
+// Shown whenever the user triggers a button whose backend endpoint isn't
+// available. Kept centralised so the wording stays consistent everywhere.
 const FEATURE_IN_WORKS = "This feature is currently in the works.";
 
-// ── Gender labels ──────────────────────────────────────────────────────────
+// ── Gender labels ────────────────────────────────────────────────────────────
 const GENDER_LABELS: Record<string, string> = {
   M: "Male",
   F: "Female",
   O: "Other",
 };
 
-// ── Filter options — keys map to the backend GET student/list/ filter set ─
-// Backend supports: gender (M | F | O), no-arm (true/false), arm-id (uuid),
-// first-name (str), last-name (str). We also surface portfolio-level filters
-// (status, boarding) here — those are client-side-only for now since the
-// backend doesn't list-filter on portfolio fields.
-type FilterOption =
-  | "all"
-  | "status:active"
-  | "status:inactive"
-  | "gender:M"
-  | "gender:F"
-  | "no_arm:true"
-  | "boarding:true";
+// ── Filter options — every option maps to a real GET student/list/ param ─────
+// Backend supports gender=<M|F|O> and no-arm=true as list-scoping filters, so
+// only those combinations are exposed here.
+type FilterOption = "all" | "gender:M" | "gender:F" | "no_arm:true";
 
 const FILTER_OPTIONS: { label: string; value: FilterOption }[] = [
   { label: "All Students", value: "all" },
-  { label: "Active", value: "status:active" },
-  { label: "Inactive", value: "status:inactive" },
   { label: "Male", value: "gender:M" },
   { label: "Female", value: "gender:F" },
-  { label: "Not Assigned to Class", value: "no_arm:true" },
-  { label: "Boarding", value: "boarding:true" },
+  { label: "Unenrolled", value: "no_arm:true" },
 ];
 
-// ── Build the API URL from current state params ────────────────────────────
-// Converts UI state (page + filter) into the backend query string.
-//
-// Backend GET student/list/ supports as list params:
-//   gender (M | F | O), no-arm (true/false), arm-id (uuid),
-//   first-name (str), last-name (str).
-//
-// status and boarding live on the portfolio and the backend does not list-
-// filter on them, so those filter values are applied client-side below.
-// Likewise the toolbar's single text search box is applied client-side
-// against the current page — matching how StaffList handles text search.
-function buildStudentsUrl(page: number, activeFilter: FilterOption): string {
+// ── Sort options — every option maps to a real GET student/list/ ordering ────
+// Backend whitelist for ?ordering= is {last_name, first_name, gender,
+// created_on}. The "default" option omits the param and lets the backend
+// apply its own default order (last_name, first_name asc + id tiebreaker),
+// which matches "Name (A → Z)". A stable id tiebreaker is always appended
+// server-side so pagination cannot duplicate or skip rows on ties.
+type SortValue =
+  | "default"
+  | "name_desc"
+  | "gender_asc"
+  | "gender_desc"
+  | "newest"
+  | "oldest";
+
+const SORT_OPTIONS: {
+  label: string;
+  value: SortValue;
+  ordering: string | null;
+}[] = [
+  { label: "Name (A → Z)", value: "default", ordering: null },
+  {
+    label: "Name (Z → A)",
+    value: "name_desc",
+    ordering: "-last_name,-first_name",
+  },
+  // Gender first (F → M → O), then alphabetical within each gender bucket so
+  // the secondary order is meaningful instead of falling back to the server's
+  // id tiebreaker.
+  {
+    label: "Gender (A → Z)",
+    value: "gender_asc",
+    ordering: "gender,last_name,first_name",
+  },
+  // Gender reversed (O → M → F). Names stay ascending inside each bucket so
+  // rows remain easy to scan visually.
+  {
+    label: "Gender (Z → A)",
+    value: "gender_desc",
+    ordering: "-gender,last_name,first_name",
+  },
+  { label: "Newest first", value: "newest", ordering: "-created_on" },
+  { label: "Oldest first", value: "oldest", ordering: "created_on" },
+];
+
+// ── Build the API URL from current state params ──────────────────────────────
+// Converts UI state (page, filter, sort, submitted search) into the backend
+// query string. Only params with a real value are appended, so the URL stays
+// minimal for the common "no filter, no sort, no search" case.
+function buildStudentsUrl(
+  page: number,
+  activeFilter: FilterOption,
+  sortValue: SortValue,
+  appliedSearch: string,
+): string {
   const params = new URLSearchParams({
     "school-id": SCHOOL_ID,
     page: String(page),
     "page-size": String(PAGE_SIZE),
   });
 
+  // Filter — split the encoded value (e.g. "gender:M") into param + value.
   if (activeFilter !== "all") {
     const [param, val] = activeFilter.split(":");
-    // Only the backend-supported list filters are sent as query params.
     if (param === "gender") {
       params.set("gender", val);
     } else if (param === "no_arm") {
       params.set("no-arm", val);
     }
-    // status and boarding are intentionally skipped here — applied client-side.
+  }
+
+  // Sort — only append when the option has an ordering string.
+  const ordering = SORT_OPTIONS.find((s) => s.value === sortValue)?.ordering;
+  if (ordering) {
+    params.set("ordering", ordering);
+  }
+
+  // Search — only send when the user has actually submitted a query.
+  const q = appliedSearch.trim();
+  if (q) {
+    params.set("search", q);
   }
 
   return `student/list/?${params.toString()}`;
 }
 
-// Apply the filters the backend does not support (status, boarding) plus the
-// toolbar text search to a page of students. The result drives the table,
-// bulk selection, and the print template so the user only ever interacts
-// with the records actually visible after every filter.
-function applyClientSideFilters(
-  rawStudents: StudentRecord[],
-  activeFilter: FilterOption,
-  searchQuery: string,
-): StudentRecord[] {
-  let filtered = rawStudents;
+// ── Formatting helpers ───────────────────────────────────────────────────────
 
-  // status (active | inactive) — derived from the student's current portfolio
-  if (activeFilter === "status:active" || activeFilter === "status:inactive") {
-    const wanted = activeFilter === "status:active" ? "active" : "inactive";
-    filtered = filtered.filter((s) => {
-      const portfolio = s.portfolios.find((p) => p.current);
-      return portfolio?.status === wanted;
-    });
-  }
-
-  // boarding — true means only boarders, derived from the current portfolio
-  if (activeFilter === "boarding:true") {
-    filtered = filtered.filter((s) => {
-      const portfolio = s.portfolios.find((p) => p.current);
-      return portfolio?.boarding === true;
-    });
-  }
-
-  // Text search — case-insensitive match across name, public_id, email, phone
-  const q = searchQuery.trim().toLowerCase();
-  if (q) {
-    filtered = filtered.filter((s) => {
-      const fullName =
-        `${s.first_name} ${s.middle_name ?? ""} ${s.last_name}`.toLowerCase();
-      return (
-        fullName.includes(q) ||
-        s.public_id.toLowerCase().includes(q) ||
-        (s.email ?? "").toLowerCase().includes(q) ||
-        (s.phone ?? "").includes(q)
-      );
-    });
-  }
-
-  return filtered;
-}
-
-// Format a class arm for display: "JSS 1 A" — section + level + arm
+// Format a class arm for display: "JSS 1 A" — section + level + arm abbrs.
 function formatArm(arm: ClassArm | null): string {
   if (!arm) return "";
   return `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`;
 }
 
-// Extract the portfolio for the current school from a student record.
-// Used for status, boarding, and created_on columns.
+// Extract the portfolio for the current school from a student record. Used
+// for status and created_on columns. Falls back to the first portfolio if
+// no current-flagged one is present.
 function getCurrentPortfolio(student: StudentRecord) {
   return student.portfolios.find((p) => p.current) ?? student.portfolios[0];
 }
 
-// ── Props ──────────────────────────────────────────────────────────────────
+// ── Props ────────────────────────────────────────────────────────────────────
 interface StudentListProps {
   /**
    * Full server-fetched paginated envelope for page 1 — used as React Query
-   * initialData. The real total_pages and count come directly from the server
-   * so no client-side recomputation is needed. Null when the server fetch failed.
+   * initialData for the clean initial state (no filter, no sort, no search).
+   * Null when the server fetch failed; React Query then fetches on mount.
    */
   initialData: PaginatedResponse<StudentRecord> | null;
 }
@@ -214,10 +211,26 @@ export default function StudentList({ initialData }: StudentListProps) {
   const { clientAuthFetch } = useClientAuthFetch();
 
   // ── Local UI state ─────────────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState("");
+
+  // Two search states: `searchInput` is what the user is typing (never sent
+  // to the backend by itself); `appliedSearch` is what the current backend
+  // request is scoped by. They diverge while the user is typing and re-sync
+  // when Submit is pressed or Clear is clicked. Keeping them separate is
+  // what lets us "avoid unnecessary requests while the user is typing".
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
   const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
+  const [sortValue, setSortValue] = useState<SortValue>("default");
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Captured once at mount and passed to useQuery as `initialDataUpdatedAt`
+  // so React Query treats the server-supplied envelope as fresh (no immediate
+  // background refetch on first mount). Using a useState initializer keeps
+  // the render pure — the timestamp is computed exactly once.
+  const [initialDataTimestamp] = useState<number>(() => Date.now());
 
   // Panel and dialog state
   const [showCreatePanel, setShowCreatePanel] = useState(false);
@@ -226,8 +239,8 @@ export default function StudentList({ initialData }: StudentListProps) {
   const [showBulkAssignPanel, setShowBulkAssignPanel] = useState(false);
   const [showRemoveArmDialog, setShowRemoveArmDialog] = useState(false);
 
-  // The student currently selected for an action (assign/change/remove/delete).
-  // null when no action is in flight.
+  // The student currently selected for an action (assign/change/remove/
+  // delete). Null when no action is in flight.
   const [selectedStudent, setSelectedStudent] = useState<StudentRecord | null>(
     null,
   );
@@ -238,20 +251,29 @@ export default function StudentList({ initialData }: StudentListProps) {
 
   // Refs
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  // Ref for the header checkbox so we can set its `indeterminate` HTML property
-  // (React doesn't expose `indeterminate` as a prop).
+  // Ref for the header checkbox so we can set its `indeterminate` HTML
+  // property (React doesn't expose `indeterminate` as a prop).
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const handlePrint = useReactToPrint({ contentRef: printRef });
 
-  // Close filter dropdown when clicking outside it
+  // Close either dropdown when the user clicks anywhere outside it. Both
+  // dropdowns share one listener so we don't register two mousedown handlers.
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
+      const target = e.target as Node;
       if (
         filterDropdownRef.current &&
-        !filterDropdownRef.current.contains(e.target as Node)
+        !filterDropdownRef.current.contains(target)
       ) {
         setFilterDropdownOpen(false);
+      }
+      if (
+        sortDropdownRef.current &&
+        !sortDropdownRef.current.contains(target)
+      ) {
+        setSortDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleOutside);
@@ -259,44 +281,64 @@ export default function StudentList({ initialData }: StudentListProps) {
   }, []);
 
   // ── React Query — list ─────────────────────────────────────────────────────
-  // Query key includes page + filter + school so changes trigger a refetch.
-  // searchQuery is NOT part of the key: text search runs client-side on the
-  // current page, matching StaffList. status and boarding are also client-side
-  // (see applyClientSideFilters below), so they likewise stay out of the key
-  // when their value would not change the URL.
+  // The query key covers every param sent to the backend, so any change to
+  // page, filter, sort, or the applied (submitted) search triggers a fetch.
+  // `searchInput` is deliberately NOT in the key: typing must not fire
+  // requests — only Submit / Clear can.
   const {
     data: queryData,
     isPending,
     isError,
     error,
   } = useQuery<PaginatedResponse<StudentRecord>>({
-    queryKey: ["students", SCHOOL_ID, currentPage, activeFilter],
+    queryKey: [
+      "students",
+      SCHOOL_ID,
+      currentPage,
+      activeFilter,
+      sortValue,
+      appliedSearch,
+    ],
     queryFn: async () => {
-      const url = buildStudentsUrl(currentPage, activeFilter);
+      const url = buildStudentsUrl(
+        currentPage,
+        activeFilter,
+        sortValue,
+        appliedSearch,
+      );
       const { data, error } =
         await clientAuthFetch<PaginatedResponse<StudentRecord>>(url);
 
       if (error) {
-        // Throwing makes React Query set isError and retry according to its policy.
-        // The error message is picked up by the useEffect below for the toast.
+        // Throwing makes React Query set isError and retry according to its
+        // policy. The error message is picked up by the useEffect below.
         throw new Error(error.message);
       }
 
       return data!;
     },
 
-    // Hydrate with the server-fetched envelope so there is no loading flash on
-    // first render. Only applied for the initial state (page 1, no filter)
-    // since that is exactly what the server fetched.
+    // Hydrate with the server-fetched envelope so there is no loading flash
+    // on first render. The envelope is used as-is — total_pages, count, and
+    // data all come directly from the server. Only applied for the clean
+    // initial state since that is exactly what the server fetched.
     initialData:
-      currentPage === 1 && activeFilter === "all"
+      currentPage === 1 &&
+      activeFilter === "all" &&
+      sortValue === "default" &&
+      appliedSearch === ""
         ? (initialData ?? undefined)
         : undefined,
 
-    // Tell React Query the server data is already fresh so it does not fire an
-    // immediate background refetch on mount when on the initial state.
+    // Tell React Query the server data is already fresh so it does not fire
+    // an immediate background refetch on mount when on the initial state.
     initialDataUpdatedAt:
-      currentPage === 1 && activeFilter === "all" ? Date.now() : undefined,
+      currentPage === 1 &&
+      activeFilter === "all" &&
+      sortValue === "default" &&
+      appliedSearch === ""
+        ? initialDataTimestamp
+        : undefined,
   });
 
   // Surface fetch errors to the user via toast.
@@ -346,24 +388,16 @@ export default function StudentList({ initialData }: StudentListProps) {
     },
   });
 
-  // Note: a delete mutation is intentionally not defined here.
-  // The backend StudentDetailView only exposes GET and PUT — there is no
-  // DELETE endpoint yet — so handleDelete surfaces the FEATURE_IN_WORKS toast
-  // instead of mutating. When DELETE student/detail/ ships, add the mutation
-  // back and wire it into handleDelete.
+  // A delete mutation is intentionally not defined here. StudentDetailView
+  // exposes GET and PUT only — no DELETE — so handleDelete surfaces the
+  // FEATURE_IN_WORKS toast. Add the mutation and wire it into handleDelete
+  // when DELETE student/detail/ ships.
 
   // ── Derived data ───────────────────────────────────────────────────────────
-  // rawStudents is the raw page from the backend (already filtered by the
-  // backend-supported list params — gender and no-arm).
-  // students applies the client-side filters (status, boarding, search) and
-  // drives the table, bulk selection, and the print template so the user only
-  // ever interacts with records that match every active filter.
-  const rawStudents = queryData?.data ?? [];
-  const students = applyClientSideFilters(
-    rawStudents,
-    activeFilter,
-    searchQuery,
-  );
+  // The backend already applies every filter, search, and sort we sent, so
+  // this array drives the table, bulk selection, and the print template as-is
+  // with no further client-side reduction.
+  const students = queryData?.data ?? [];
   const totalPages = queryData?.total_pages ?? 1;
 
   // ── Bulk selection derived state ───────────────────────────────────────────
@@ -375,8 +409,8 @@ export default function StudentList({ initialData }: StudentListProps) {
   const someOnPageSelected = students.some((s) => selectedIds.has(s.id));
   const isIndeterminate = someOnPageSelected && !allOnPageSelected;
 
-  // Set the header checkbox's indeterminate property in sync with state.
-  // React doesn't expose `indeterminate` as a prop, so we set it via ref.
+  // React doesn't expose `indeterminate` as a prop, so we set it via ref
+  // whenever the derived flag changes.
   useEffect(() => {
     if (headerCheckboxRef.current) {
       headerCheckboxRef.current.indeterminate = isIndeterminate;
@@ -385,15 +419,40 @@ export default function StudentList({ initialData }: StudentListProps) {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  function handleSearchChange(q: string) {
-    setSearchQuery(q);
+  // Submit the current search input to the backend. Called by the Submit
+  // button and by pressing Enter inside the input (via the wrapping form).
+  // Resets to page 1 so results always start from the beginning.
+  function handleSearchSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    const q = searchInput.trim();
+    // Skip the round-trip when the submitted value hasn't actually changed —
+    // React Query would just return the cached page anyway, but keeping the
+    // guard here avoids resetting the current page for no reason.
+    if (q === appliedSearch) return;
+    setAppliedSearch(q);
     setCurrentPage(1);
+  }
+
+  // Clear both the input and the active backend search, and drop back to
+  // page 1 so the user sees the unfiltered list again.
+  function handleSearchClear() {
+    setSearchInput("");
+    if (appliedSearch !== "") {
+      setAppliedSearch("");
+      setCurrentPage(1);
+    }
   }
 
   function handleFilterChange(f: FilterOption) {
     setActiveFilter(f);
     setCurrentPage(1);
     setFilterDropdownOpen(false);
+  }
+
+  function handleSortChange(s: SortValue) {
+    setSortValue(s);
+    setCurrentPage(1);
+    setSortDropdownOpen(false);
   }
 
   // Toggle a single row's selection. Set updates must be immutable so React
@@ -426,15 +485,16 @@ export default function StudentList({ initialData }: StudentListProps) {
     setSelectedIds(new Set());
   }
 
-  // Closes the create panel and triggers a list/stats refresh.
+  // Closes the create panel and refreshes both list and stats so the table
+  // and the counts reflect any newly created student.
   function handleCreatePanelClose() {
     setShowCreatePanel(false);
     queryClient.invalidateQueries({ queryKey: ["students", SCHOOL_ID] });
     queryClient.invalidateQueries({ queryKey: ["student-stats", SCHOOL_ID] });
   }
 
-  // After arm assignment / change completes, refresh both list and stats so
-  // the table and the "Active" count reflect the change.
+  // Runs after either arm-assignment panel closes; refreshes both list and
+  // stats so the table and enrolled/unenrolled counts stay accurate.
   function handleArmPanelClose() {
     setShowAssignArmPanel(false);
     setShowChangeArmPanel(false);
@@ -443,15 +503,15 @@ export default function StudentList({ initialData }: StudentListProps) {
     queryClient.invalidateQueries({ queryKey: ["student-stats", SCHOOL_ID] });
   }
 
-  // After bulk assign completes, the panel itself clears the selection. Here
-  // we only close the panel and refresh queries.
+  // Runs after bulk assign closes; the panel itself clears the selection.
+  // Refresh list + stats so the table reflects the new placements.
   function handleBulkAssignClose() {
     setShowBulkAssignPanel(false);
     queryClient.invalidateQueries({ queryKey: ["students", SCHOOL_ID] });
     queryClient.invalidateQueries({ queryKey: ["student-stats", SCHOOL_ID] });
   }
 
-  // ── Action menu handlers — receive a row's student and route to the right UI
+  // ── Action-menu handlers — receive a row's student and route to UI ─────────
   function handleViewProfile(student: StudentRecord) {
     router.push(`/dashboard/student-profile?id=${student.id}`);
   }
@@ -472,19 +532,16 @@ export default function StudentList({ initialData }: StudentListProps) {
   }
 
   function handleDelete(_student: StudentRecord) {
-    // The backend has no DELETE student/detail/ endpoint yet, so we surface
-    // the shared FEATURE_IN_WORKS toast instead of attempting the action.
+    // Backend has no DELETE student/detail/ endpoint, so surface the shared
+    // FEATURE_IN_WORKS toast instead of attempting the action.
     toast.info(FEATURE_IN_WORKS);
   }
 
-  // No PDF/export endpoint exists on the backend yet — surface the same
-  // shared FEATURE_IN_WORKS toast until one ships.
-  function handleDownloadPdf() {
-    toast.info(FEATURE_IN_WORKS);
-  }
-
+  // Labels for the two dropdown buttons.
   const activeFilterLabel =
     FILTER_OPTIONS.find((o) => o.value === activeFilter)?.label ?? "Filter";
+  const activeSortLabel =
+    SORT_OPTIONS.find((o) => o.value === sortValue)?.label ?? "Sort";
 
   // Determines whether any slide-in panel is open — used to collapse the list.
   const anyPanelOpen =
@@ -492,6 +549,11 @@ export default function StudentList({ initialData }: StudentListProps) {
     showAssignArmPanel ||
     showChangeArmPanel ||
     showBulkAssignPanel;
+
+  // True when the user has typed something they haven't submitted yet.
+  // Shown as a small hint next to the Submit button so it's obvious the
+  // current results still reflect the previous search.
+  const hasUnsubmittedSearch = searchInput.trim() !== appliedSearch;
 
   return (
     <>
@@ -503,91 +565,211 @@ export default function StudentList({ initialData }: StudentListProps) {
           }`}
         >
           {/* ── Toolbar ───────────────────────────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row gap-2 mb-6">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search
-                size={13}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-              />
-              <input
-                type="text"
-                placeholder="Search name, email, phone, ID…"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
-              />
-            </div>
-
-            {/* Filter dropdown */}
-            <div ref={filterDropdownRef} className="relative">
+          {/* Two groups: the search form and a single right-aligned action row
+              containing Filter, Sort, Print and Create. On mobile they stack;
+              on lg+ they lay out inline. Create uses CSS `order` to sit at
+              the leftmost slot of the action row on mobile so Filter and
+              Sort stay near the right edge and their `right-0`-positioned
+              menus never extend past the left side of the viewport. */}
+          <div className="flex flex-col lg:flex-row gap-2 mb-6">
+            {/* Search input + Submit button — wrapped in a form so pressing
+                Enter inside the input triggers the same submit path as the
+                button. Typing alone never fires a request. */}
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex gap-2 flex-1 min-w-0"
+              role="search"
+              aria-label="Search students"
+            >
+              <div className="relative flex-1 min-w-0">
+                <Search
+                  size={13}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Search name or student ID…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  aria-label="Search students by name or ID"
+                  className="w-full pl-8 pr-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+                />
+                {(searchInput || appliedSearch) && (
+                  <button
+                    type="button"
+                    onClick={handleSearchClear}
+                    aria-label="Clear search"
+                    className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              {/* Icon-only submit — the input's placeholder + label carry the
+                  "search" meaning, so the button just needs an aria-label. */}
               <button
-                onClick={() => setFilterDropdownOpen((o) => !o)}
-                className={`cursor-pointer flex w-full items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
-                  activeFilter !== "all"
-                    ? "border-violet-400 bg-violet-50 text-violet-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
-                }`}
+                type="submit"
+                disabled={!hasUnsubmittedSearch}
+                aria-label="Search"
+                title="Search"
+                className="cursor-pointer flex items-center justify-center px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm shadow-violet-200"
               >
-                <Filter size={12} />
-                <span className="hidden sm:inline">{activeFilterLabel}</span>
-                <span className="sm:hidden">Filter</span>
+                <Search size={14} />
               </button>
+            </form>
 
-              {filterDropdownOpen && (
-                <div className="absolute top-10 left-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-56 py-1">
-                  {FILTER_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleFilterChange(opt.value)}
-                      className={`cursor-pointer w-full text-left px-4 py-2 text-xs transition-colors ${
-                        activeFilter === opt.value
-                          ? "bg-violet-50 text-violet-700 font-semibold"
-                          : "text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Filter, Sort, Print and Create — one right-aligned group. On
+                mobile Create jumps to the visual leftmost slot via
+                `order-first`, which keeps Filter and Sort near the right edge
+                so their `right-0`-positioned menus never clip past the left
+                side of the viewport. On md+ the natural DOM order is
+                restored via `md:order-none` and Create returns to its usual
+                rightmost position. Print is hidden below md. */}
+            <div className="flex gap-2 justify-end">
+              {/* Filter dropdown — outside-click handled by the shared effect */}
+              <div ref={filterDropdownRef} className="relative">
+                <button
+                  onClick={() => {
+                    setFilterDropdownOpen((o) => !o);
+                    setSortDropdownOpen(false);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={filterDropdownOpen}
+                  className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
+                    activeFilter !== "all"
+                      ? "border-violet-400 bg-violet-50 text-violet-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
+                  }`}
+                >
+                  <Filter size={12} />
+                  <span className="hidden sm:inline">{activeFilterLabel}</span>
+                  <span className="sm:hidden">Filter</span>
+                </button>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 justify-end">
-              {/* Download PDF — backend endpoint not built yet, so the click
-                  surfaces the shared "feature in the works" toast. */}
-              <button
-                onClick={handleDownloadPdf}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors"
-                title="Download PDF"
-              >
-                <Download size={12} />
-                <span className="hidden sm:inline">PDF</span>
-              </button>
+                {filterDropdownOpen && (
+                  <div
+                    role="menu"
+                    className="absolute top-10 right-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-44 sm:w-52 py-1"
+                  >
+                    {FILTER_OPTIONS.map((opt) => {
+                      const isActive = activeFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          role="menuitem"
+                          onClick={() => handleFilterChange(opt.value)}
+                          className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
+                            isActive
+                              ? "bg-violet-50 text-violet-700 font-semibold"
+                              : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isActive && <Check size={12} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
+              {/* Sort dropdown — same interaction pattern as the filter */}
+              <div ref={sortDropdownRef} className="relative">
+                <button
+                  onClick={() => {
+                    setSortDropdownOpen((o) => !o);
+                    setFilterDropdownOpen(false);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={sortDropdownOpen}
+                  className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
+                    sortValue !== "default"
+                      ? "border-violet-400 bg-violet-50 text-violet-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
+                  }`}
+                >
+                  <ArrowUpDown size={12} />
+                  <span className="hidden sm:inline">{activeSortLabel}</span>
+                  <span className="sm:hidden">Sort</span>
+                </button>
+
+                {sortDropdownOpen && (
+                  <div
+                    role="menu"
+                    className="absolute top-10 right-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-44 sm:w-52 py-1"
+                  >
+                    {SORT_OPTIONS.map((opt) => {
+                      const isActive = sortValue === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          role="menuitem"
+                          onClick={() => handleSortChange(opt.value)}
+                          className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
+                            isActive
+                              ? "bg-violet-50 text-violet-700 font-semibold"
+                              : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isActive && <Check size={12} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Print — hidden below md to keep the mobile toolbar compact */}
               <button
                 onClick={() => handlePrint()}
-                className="cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors"
+                className="cursor-pointer hidden md:inline-flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 transition-colors"
                 title="Print"
               >
                 <Printer size={12} />
                 <span className="hidden sm:inline">Print</span>
               </button>
 
+              {/* Create Student — leftmost on mobile via order-first, natural
+                  rightmost slot on md+ via order-none. Label shortens below sm
+                  so the whole group fits comfortably on narrow viewports. */}
               <button
                 onClick={() => setShowCreatePanel(true)}
-                className="cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
+                className="cursor-pointer order-first md:order-0 flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
               >
                 <UserPlus size={12} />
-                <span>Create Student</span>
+                <span className="sm:hidden">Create</span>
+                <span className="hidden sm:inline">Create Student</span>
               </button>
             </div>
           </div>
 
+          {/* ── Active-search pill ───────────────────────────────────────── */}
+          {/* Confirms to the user which query the current results are scoped
+              to and offers a one-click way out. Shown only when there's an
+              active backend search in effect. */}
+          {appliedSearch && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
+              <span>Showing results for</span>
+              <span className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1 font-medium">
+                <span className="truncate max-w-55">
+                  &ldquo;{appliedSearch}&rdquo;
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSearchClear}
+                  aria-label="Clear search"
+                  className="cursor-pointer text-violet-500 hover:text-violet-800 transition-colors"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            </div>
+          )}
+
           {/* ── Bulk action bar ─────────────────────────────────────────── */}
-          {/* Appears between toolbar and table when 2+ students are selected. */}
-          {/* The count reflects the FULL selection across pages. */}
+          {/* Appears between toolbar and table when 2+ students are selected.
+              The count reflects the FULL selection across pages. */}
           {selectedIds.size >= 2 && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-violet-50 border border-violet-100 rounded-xl px-4 py-2.5 mb-4">
               <div className="flex items-center gap-2 text-violet-700">
@@ -615,7 +797,7 @@ export default function StudentList({ initialData }: StudentListProps) {
             </div>
           )}
 
-          {/* ── Loading state — skeleton rows while there is no data yet ─────── */}
+          {/* ── Loading state — skeleton rows while there is no data yet ─── */}
           {isPending ? (
             <TableLoader rows={6} className="my-4" />
           ) : (
@@ -625,7 +807,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-slate-100 text-left text-slate-500 border-b border-slate-200">
-                      {/* Select-all checkbox — toggles every row on the current page */}
+                      {/* Select-all checkbox — toggles every row on this page */}
                       <th className="px-5 py-3 font-semibold w-10">
                         <input
                           ref={headerCheckboxRef}
@@ -652,16 +834,16 @@ export default function StudentList({ initialData }: StudentListProps) {
                       <tr>
                         <td colSpan={7}>
                           <EmptyState
-                            variant={searchQuery ? "search" : "students"}
+                            variant={appliedSearch ? "search" : "students"}
                             title={
-                              searchQuery
+                              appliedSearch
                                 ? "No results found"
                                 : "No students found"
                             }
                             description={
-                              searchQuery
-                                ? `No students match "${searchQuery}".`
-                                : "Try adjusting your filter criteria."
+                              appliedSearch
+                                ? `No students match "${appliedSearch}".`
+                                : "Try adjusting your filter or sort criteria."
                             }
                           />
                         </td>
@@ -771,9 +953,14 @@ export default function StudentList({ initialData }: StudentListProps) {
               <div className="flex flex-col gap-3 md:hidden my-4">
                 {students.length === 0 ? (
                   <EmptyState
-                    variant={searchQuery ? "search" : "students"}
+                    variant={appliedSearch ? "search" : "students"}
                     title={
-                      searchQuery ? "No results found" : "No students found"
+                      appliedSearch ? "No results found" : "No students found"
+                    }
+                    description={
+                      appliedSearch
+                        ? `No students match "${appliedSearch}".`
+                        : "Try adjusting your filter or sort criteria."
                     }
                   />
                 ) : (
@@ -906,7 +1093,7 @@ export default function StudentList({ initialData }: StudentListProps) {
         />
       </div>
 
-      {/* ── Remove from class dialog ────────────────────────────────────── */}
+      {/* ── Remove-from-class dialog ────────────────────────────────────── */}
       <StudentRemoveFromArmDialog
         open={showRemoveArmDialog}
         student={selectedStudent}
@@ -927,7 +1114,7 @@ export default function StudentList({ initialData }: StudentListProps) {
         }}
       />
 
-      {/* Hidden print template — prints currently loaded students */}
+      {/* Hidden print template — prints the students currently on screen */}
       <div className="h-0 overflow-hidden">
         <StudentPrintTemplate ref={printRef} students={students} />
       </div>
