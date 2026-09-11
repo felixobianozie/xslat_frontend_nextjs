@@ -30,9 +30,13 @@
 //    toast.
 //
 // Bulk selection:
-//  - `selectedIds` is a Set<string> kept in component state. It persists
-//    across page changes and filter changes because selection is keyed by
-//    student ID, not by row position.
+//  - `selectedStudents` is a Map<id, StudentRecord> kept in component state.
+//    Storing full records (not just ids) lets the Bulk Assign Arm panel
+//    filter by arm status without a separate lookup fetch. Selection
+//    persists across page and filter changes because entries are keyed by
+//    student id, not row position; when a previously-selected row rerenders
+//    on a later fetch, its stored record is refreshed so the panel sees the
+//    freshest data for currently-visible selections.
 //  - The header checkbox toggles every row on the current page only — it
 //    shows an indeterminate state when some-but-not-all visible rows are
 //    selected.
@@ -245,9 +249,13 @@ export default function StudentList({ initialData }: StudentListProps) {
     null,
   );
 
-  // Bulk selection — set of student IDs ticked in the table. Persists across
-  // page and filter changes since selection is keyed by ID, not row position.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Bulk selection — map from student id to the full record. Storing records
+  // (not just ids) lets the Bulk Assign Arm panel filter by arm status
+  // without a separate lookup fetch. Persists across page and filter changes
+  // since entries are keyed by id, not row position.
+  const [selectedStudents, setSelectedStudents] = useState<
+    Map<string, StudentRecord>
+  >(new Map());
 
   // Refs
   const filterDropdownRef = useRef<HTMLDivElement>(null);
@@ -405,8 +413,8 @@ export default function StudentList({ initialData }: StudentListProps) {
   // page 2 doesn't tick page 1's rows, and vice versa. The bulk action bar
   // (further down) shows the TOTAL count across pages.
   const allOnPageSelected =
-    students.length > 0 && students.every((s) => selectedIds.has(s.id));
-  const someOnPageSelected = students.some((s) => selectedIds.has(s.id));
+    students.length > 0 && students.every((s) => selectedStudents.has(s.id));
+  const someOnPageSelected = students.some((s) => selectedStudents.has(s.id));
   const isIndeterminate = someOnPageSelected && !allOnPageSelected;
 
   // React doesn't expose `indeterminate` as a prop, so we set it via ref
@@ -416,6 +424,27 @@ export default function StudentList({ initialData }: StudentListProps) {
       headerCheckboxRef.current.indeterminate = isIndeterminate;
     }
   }, [isIndeterminate]);
+
+  // Refresh stored records with the freshest data whenever a currently-
+  // visible row is also selected. React Query's structural sharing means
+  // this effect only fires when `students` actually changes, and each row
+  // comparison is a cheap reference check. Rows on other pages aren't
+  // touched — their records stay as they were at selection time.
+  useEffect(() => {
+    if (students.length === 0) return;
+    setSelectedStudents((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Map(prev);
+      students.forEach((s) => {
+        if (next.has(s.id) && next.get(s.id) !== s) {
+          next.set(s.id, s);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [students]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -455,13 +484,14 @@ export default function StudentList({ initialData }: StudentListProps) {
     setSortDropdownOpen(false);
   }
 
-  // Toggle a single row's selection. Set updates must be immutable so React
-  // detects the change, hence the `new Set(prev)` pattern.
-  function toggleStudent(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  // Toggle a single row's selection. The full record is stored (not just
+  // its id) so the panel can read arm status directly. Map updates must be
+  // immutable for React to detect the change, hence the `new Map(prev)`.
+  function toggleStudent(student: StudentRecord) {
+    setSelectedStudents((prev) => {
+      const next = new Map(prev);
+      if (next.has(student.id)) next.delete(student.id);
+      else next.set(student.id, student);
       return next;
     });
   }
@@ -469,12 +499,12 @@ export default function StudentList({ initialData }: StudentListProps) {
   // Toggle every row on the current page. If everything visible is already
   // selected, the click acts as a "deselect page" instead.
   function toggleAllOnPage() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
+    setSelectedStudents((prev) => {
+      const next = new Map(prev);
       if (allOnPageSelected) {
         students.forEach((s) => next.delete(s.id));
       } else {
-        students.forEach((s) => next.add(s.id));
+        students.forEach((s) => next.set(s.id, s));
       }
       return next;
     });
@@ -482,7 +512,7 @@ export default function StudentList({ initialData }: StudentListProps) {
 
   // Clear all selections — used by the "Clear" button in the bulk action bar.
   function clearSelection() {
-    setSelectedIds(new Set());
+    setSelectedStudents(new Map());
   }
 
   // Closes the create panel and refreshes both list and stats so the table
@@ -770,13 +800,14 @@ export default function StudentList({ initialData }: StudentListProps) {
           {/* ── Bulk action bar ─────────────────────────────────────────── */}
           {/* Appears between toolbar and table when 2+ students are selected.
               The count reflects the FULL selection across pages. */}
-          {selectedIds.size >= 2 && (
+          {selectedStudents.size >= 2 && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-violet-50 border border-violet-100 rounded-xl px-4 py-2.5 mb-4">
               <div className="flex items-center gap-2 text-violet-700">
                 <Users size={14} />
                 <span className="text-xs font-medium">
-                  {selectedIds.size}{" "}
-                  {selectedIds.size === 1 ? "student" : "students"} selected
+                  {selectedStudents.size}{" "}
+                  {selectedStudents.size === 1 ? "student" : "students"}{" "}
+                  selected
                 </span>
               </div>
               <div className="flex items-center gap-2 justify-end">
@@ -851,7 +882,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                     ) : (
                       students.map((student, index) => {
                         const portfolio = getCurrentPortfolio(student);
-                        const isChecked = selectedIds.has(student.id);
+                        const isChecked = selectedStudents.has(student.id);
                         return (
                           <tr
                             key={student.id}
@@ -867,7 +898,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={() => toggleStudent(student.id)}
+                                onChange={() => toggleStudent(student)}
                                 aria-label={`Select ${student.last_name} ${student.first_name}`}
                                 className="accent-violet-600 cursor-pointer"
                               />
@@ -966,7 +997,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                 ) : (
                   students.map((student) => {
                     const portfolio = getCurrentPortfolio(student);
-                    const isChecked = selectedIds.has(student.id);
+                    const isChecked = selectedStudents.has(student.id);
                     return (
                       <div
                         key={student.id}
@@ -983,7 +1014,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                             <input
                               type="checkbox"
                               checked={isChecked}
-                              onChange={() => toggleStudent(student.id)}
+                              onChange={() => toggleStudent(student)}
                               aria-label={`Select ${student.first_name} ${student.last_name}`}
                               className="accent-violet-600 cursor-pointer shrink-0"
                             />
@@ -1088,8 +1119,8 @@ export default function StudentList({ initialData }: StudentListProps) {
         <StudentBulkAssignArmPanel
           show={showBulkAssignPanel}
           onClose={handleBulkAssignClose}
-          selectedIds={selectedIds}
-          setSelectedIds={setSelectedIds}
+          selectedStudents={selectedStudents}
+          setSelectedStudents={setSelectedStudents}
         />
       </div>
 

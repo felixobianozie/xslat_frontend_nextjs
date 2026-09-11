@@ -8,28 +8,29 @@
 // bar (shown when 2+ rows are checked).
 //
 // Behaviour notes:
-//  - The "selected students" shown in this panel are derived from the parent
-//    selection AND filtered down to arm-less students only. Students who
-//    already have a class arm are silently dropped from the visible list,
-//    matching the agreed UX rule: bulk-assign is a "fill empty seats" tool.
-//    Those students stay checked in the table but aren't operated on here.
-//  - X buttons remove a student from the parent selection so the table
-//    checkboxes update in lockstep.
+//  - The parent passes the full student records for every selection (not just
+//    ids), so this panel doesn't need to refetch anything to know arm status.
+//    Records are filtered down to arm-less students for both the chip list
+//    and the mutation payload — students who already have a class arm stay
+//    checked in the parent's table but aren't operated on here. That matches
+//    the UX rule: bulk-assign is a "fill empty seats" tool; Change Class
+//    (from the row menu) is how existing arm assignments are moved.
+//  - X buttons on chips remove a student from the parent selection so the
+//    table checkbox updates in lockstep.
 //  - To add more students, close the panel, tick more rows in the table, and
-//    reopen the panel. We deliberately avoid an in-panel search list because
-//    it would not scale gracefully to schools with hundreds of students.
-//  - On successful submit, the parent selection is cleared entirely (including
-//    any with-arm IDs that weren't visible here).
+//    reopen. We deliberately avoid an in-panel search list because it would
+//    not scale gracefully to schools with hundreds of students.
+//  - On successful submit, the parent selection is cleared entirely
+//    (including any with-arm records that were carried through but not
+//    operated on here).
+//
+// Data layer:
+//   - arms via GET arm/list/ (paginated envelope), scoped to the school's
+//     current term (resolved via school/detail/).
+//   - assign via PUT arm/detail/roster/ with all arm-less student ids.
 //
 // Backend reference (PUT arm/detail/roster/):
 //   Body: { id: <arm_uuid>, school_id: <uuid>, add_student: [<student_uuids>] }
-//
-// Data layer:
-//   - arms via GET arm/list/ (paginated envelope)
-//   - allStudents via GET student/list/?page-size=100 (paginated envelope) so
-//     the panel can resolve names + arm status from any selected ID, even when
-//     selected on a different page of the paginated table.
-//   - assign via PUT arm/detail/roster/ with all arm-less student ids.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
@@ -46,8 +47,8 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// Minimal shape from GET school/detail/. We only need the current_term id to
-// pass to the arm list endpoint, so the rest of the school payload is ignored.
+// Minimal shape from GET school/detail/. Only current_term.id is used here
+// to scope the arm list query; the rest of the school payload is ignored.
 interface SchoolDetailResponse {
   message: string;
   data: {
@@ -66,22 +67,24 @@ function formatArm(arm: ClassArm): string {
 interface StudentBulkAssignArmPanelProps {
   show: boolean;
   onClose: () => void;
-  /** Parent's full selection (table checkboxes). May contain with-arm students. */
-  selectedIds: Set<string>;
-  /** Setter so the panel's add/remove keeps the table checkboxes in sync. */
-  setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
+  /** Parent's selection as full student records, keyed by id. May include
+   *  students who already have a class arm — those are filtered out below. */
+  selectedStudents: Map<string, StudentRecord>;
+  /** Setter so removing a chip here unchecks the corresponding table row. */
+  setSelectedStudents: Dispatch<SetStateAction<Map<string, StudentRecord>>>;
 }
 
 export default function StudentBulkAssignArmPanel({
   show,
   onClose,
-  selectedIds,
-  setSelectedIds,
+  selectedStudents,
+  setSelectedStudents,
 }: StudentBulkAssignArmPanelProps) {
   const queryClient = useQueryClient();
   const { clientAuthFetch } = useClientAuthFetch();
 
-  // Panel-local state — reset on each open.
+  // Panel-local state — reset on each open so a previously-picked arm
+  // doesn't leak into the next session.
   const [armId, setArmId] = useState<string>("");
 
   useEffect(() => {
@@ -91,11 +94,10 @@ export default function StudentBulkAssignArmPanel({
   }, [show]);
 
   // ── Queries ────────────────────────────────────────────────────────────────
-  // All queries are gated on `show` so the panel doesn't fetch until opened.
+  // Both queries are gated on `show` so nothing fetches until opened.
 
-  // School detail — used to resolve the current term id for the arm list
-  // endpoint. Cached under ["school", SCHOOL_ID] so all arm
-  // panels share the same network call.
+  // School detail — resolves the current term id for the arm list query.
+  // Cached under ["school", SCHOOL_ID] so every arm panel shares the call.
   const {
     data: schoolData,
     isLoading: schoolLoading,
@@ -114,7 +116,7 @@ export default function StudentBulkAssignArmPanel({
 
   const currentTermId = schoolData?.data?.current_term?.id ?? null;
 
-  // Arms — gated on having both `show` AND a resolved current term. The backend
+  // Arms — gated on `show` AND a resolved current term. The backend
   // arm/list/ endpoint rejects requests without a term-id. The query key
   // includes the term so the cache is correctly partitioned across terms.
   const {
@@ -135,28 +137,10 @@ export default function StudentBulkAssignArmPanel({
     enabled: show && !!currentTermId,
   });
 
-  // page-size=100 mirrors the stats-bar pattern — sufficient for resolving
-  // selected ids whose detail rows may live on other pages of the table.
-  const { data: allStudentsData, isLoading: studentsLoading } = useQuery<
-    PaginatedResponse<StudentRecord>
-  >({
-    queryKey: ["all-students", SCHOOL_ID],
-    queryFn: async () => {
-      const { data, error } = await clientAuthFetch<
-        PaginatedResponse<StudentRecord>
-      >(`student/list/?school-id=${SCHOOL_ID}&page=1&page-size=100`);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    enabled: show,
-  });
-
-  // Extract arrays from the paginated envelopes.
   const arms = armsData?.data ?? [];
-  const allStudents = allStudentsData?.data;
 
   // Combined loading state — true while either school or arms is in flight,
-  // so the dropdown's "Loading…" placeholder covers the whole dependency chain.
+  // so the dropdown's "Loading…" placeholder covers the whole chain.
   const armsLoading = schoolLoading || armsQueryLoading;
 
   // Surface error states via toast.
@@ -174,15 +158,18 @@ export default function StudentBulkAssignArmPanel({
     if (armsError) toast.error("Could not load class arms.");
   }, [armsError]);
 
-  // ── Derived: selected students (filtered to arm-less only) ─────────────────
-  // These are the students that will actually be assigned. With-arm students
-  // in `selectedIds` are silently excluded from the panel by this filter.
-  const armlessSelected = useMemo(() => {
-    if (!allStudents) return [];
-    return allStudents.filter(
-      (s) => selectedIds.has(s.id) && s.current_arm === null,
-    );
-  }, [allStudents, selectedIds]);
+  // ── Derived: selected students filtered to arm-less only ──────────────────
+  // Reads records directly from the parent-supplied map, so there's no
+  // separate fetch to reconcile against. With-arm students stay in the
+  // parent's map (row checkbox stays ticked) but are excluded from the
+  // chip list and mutation payload below.
+  const armlessSelected = useMemo(
+    () =>
+      Array.from(selectedStudents.values()).filter(
+        (s) => s.current_arm === null,
+      ),
+    [selectedStudents],
+  );
 
   // ── Mutation ───────────────────────────────────────────────────────────────
   // Single PUT to the arm roster with every arm-less id. The backend treats
@@ -211,14 +198,10 @@ export default function StudentBulkAssignArmPanel({
         } to class.`,
       );
 
-      // Clear the FULL parent selection (including any with-arm IDs that
-      // weren't visible in the panel) so the table goes back to a clean state.
-      setSelectedIds(new Set());
-
-      // Refresh the panel-local all-students cache so a follow-up open shows
-      // the just-assigned students as no-longer-arm-less. Parent's
-      // handleBulkAssignClose refreshes the table list + stats.
-      queryClient.invalidateQueries({ queryKey: ["all-students", SCHOOL_ID] });
+      // Clear the FULL parent selection (including any with-arm records that
+      // were carried through but not operated on) so the table goes back to
+      // a clean state.
+      setSelectedStudents(new Map());
 
       onClose();
     },
@@ -231,8 +214,8 @@ export default function StudentBulkAssignArmPanel({
 
   // Remove a single student from the parent selection (also unchecks the row).
   function removeSelected(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
+    setSelectedStudents((prev) => {
+      const next = new Map(prev);
       next.delete(id);
       return next;
     });
@@ -240,6 +223,10 @@ export default function StudentBulkAssignArmPanel({
 
   // Submit gate — need both an arm and at least one arm-less student.
   const canSubmit = !!armId && armlessSelected.length > 0 && !isPending;
+
+  // How many selected students already had an arm and were excluded from the
+  // panel. Drives the informational amber banner.
+  const droppedCount = selectedStudents.size - armlessSelected.length;
 
   return (
     <div
@@ -282,11 +269,7 @@ export default function StudentBulkAssignArmPanel({
               </label>
 
               <div className="min-h-12 bg-slate-50 border border-slate-100 rounded-xl p-3">
-                {studentsLoading ? (
-                  <span className="text-[11px] text-slate-400 italic">
-                    Loading…
-                  </span>
-                ) : armlessSelected.length === 0 ? (
+                {armlessSelected.length === 0 ? (
                   <span className="text-[11px] text-slate-400 italic">
                     No arm-less students selected. Close this panel and tick
                     more rows in the table to add them here.
@@ -349,18 +332,21 @@ export default function StudentBulkAssignArmPanel({
               </select>
             </div>
 
-            {/* Info note — explains the silent-drop rule when relevant */}
-            {selectedIds.size > armlessSelected.length && allStudents && (
+            {/* Info note — explains the with-arm exclusion when relevant.
+                The delta is honest here: records come from the parent, so
+                a positive delta genuinely means with-arm records, not
+                lookups that missed a truncated fetch. */}
+            {droppedCount > 0 && (
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
                 <AlertTriangle
                   size={14}
                   className="text-amber-600 shrink-0 mt-0.5"
                 />
                 <p className="text-[11px] text-amber-700 leading-relaxed">
-                  {selectedIds.size - armlessSelected.length} of your selected
-                  students already have a class arm and aren't included here.
-                  Use <span className="font-semibold">Change Class</span> from
-                  the row menu to move them individually.
+                  {droppedCount} of your selected students already have a class
+                  arm and aren't included here. Use{" "}
+                  <span className="font-semibold">Change Class</span> from the
+                  row menu to move them individually.
                 </p>
               </div>
             )}
