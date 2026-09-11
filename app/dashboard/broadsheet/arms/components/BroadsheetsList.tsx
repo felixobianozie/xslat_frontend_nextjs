@@ -4,36 +4,54 @@
 // BroadsheetsList.tsx
 //
 // Renders the broadsheets list page — one row per class arm, showing each
-// arm's current broadsheet status and exposing the admin actions
-// (View / Approve / Revoke), plus the term-level Publish Results action.
+// arm's broadsheet status for the currently-scoped term and exposing the
+// admin actions (View / Approve / Revoke) plus the term-level Publish
+// Results action when the scoped term is the school's live one.
 //
 // Layout:
-//   - Session / Term filter row (placeholder — see note below).
-//   - Term-level progress strip showing how many arms in the term are approved.
-//   - Toolbar with search + Publish Results button.
+//   - Session / Term filter row (real dropdowns; see below).
+//   - Term-level progress strip + school pin-usage rollup, side by side.
+//   - Toolbar with search and either the Publish button (current term) or
+//     a Published tag (previous terms).
 //   - Desktop: table.   Mobile: stacked cards.
 //
 // Data layer:
-//   - useQuery is the single source of truth. queryFn calls the real backend
-//     GET arm/list/?school-id=…&term-id=… via clientAuthFetch.
-//   - initialArms (from the server component) is handed to React Query as
-//     initialData so there is no loading flash on first paint.
-//   - The query key is ["broadsheet-arms", SCHOOL_ID, currentTerm.id] so that
-//     switching term (once the placeholder filter becomes real) doesn't
-//     stale-serve the previous term's arms. BroadsheetAdminActionModal
-//     invalidates the broad ["broadsheet-arms"] prefix, which still matches.
+//   - useQuery is the single source of truth for both arms and the sessions
+//     list. Both hydrate from server-fetched initialData so first paint has
+//     no loading flash.
+//   - Arms query key is ["broadsheet-arms", SCHOOL_ID, selectedTermId] so
+//     switching term instantly resolves to a fresh cached query without
+//     stale-serving the previously-selected term's rows.
+//     BroadsheetAdminActionModal invalidates the broad ["broadsheet-arms"]
+//     prefix, which still matches.
+//   - Pin-usage query key includes selectedTermId + selectedSessionId so
+//     the rollup card mirrors the same term the arms table is scoped to.
 //   - Text search is purely client-side: the backend list endpoint doesn't
 //     expose a full-text search param.
 //
-// Session / Term filter (placeholder):
-//   - The two chips at the top display the school's CURRENT session and CURRENT
-//     term names (resolved server-side and passed in via props).
-//   - Clicking either fires a "feature in the works" toast — actual switching
-//     between sessions/terms is not wired yet. Once the backend exposes list
-//     endpoints for prior sessions/terms, the chips become real dropdowns and
-//     the query key already picks up the new term-id automatically.
+// Session / Term filter:
+//   - Two dropdowns (SessionTermFilterBar). Session lists every session for
+//     the school; Term lists the terms of the selected session. Selecting
+//     a session auto-picks that session's current term (or its first term
+//     when none is marked current — the common case for a past session).
+//   - The school's live session and term are tagged "Current" inside the
+//     dropdowns so the admin can distinguish the live period from history.
 //
-// Actions:
+// Previous-term behaviour (read-only):
+//   - A previous term is any selected term whose id doesn't match the
+//     school's current term id. On such a selection:
+//       · The Publish Results button in the toolbar is replaced with a
+//         static "Published" tag — publishing is only a current-term action.
+//       · The row action menu (Approve / Revoke / View) is hidden on every
+//         row, both in the desktop table and the mobile cards. The row
+//         name remains a link into the arm's broadsheet detail so viewing
+//         is still one tap away.
+//       · The term progress strip switches its readiness pill to a green
+//         "Published" pill instead of the current-term readiness ladder.
+//   - Approve / Revoke never dispatch against a past term because their
+//     entry point (the action menu) doesn't render at all in that state.
+//
+// Actions (current term only):
 //   - View   → navigates to /dashboard/broadsheet/arm?id=<armId>.
 //   - Approve / Revoke → opens BroadsheetAdminActionModal, which fires the
 //     mutation and invalidates ["broadsheet-arms"] on success.
@@ -44,9 +62,7 @@ import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  CalendarClock,
-  CalendarRange,
-  ChevronDown,
+  CheckCircle2,
   Eye,
   Globe,
   KeyRound,
@@ -65,16 +81,14 @@ import BroadsheetAdminActionModal, {
   type BroadsheetAdminAction,
 } from "./BroadsheetAdminActionModal";
 import BroadsheetPublishModal from "./BroadsheetPublishModal";
-import type { ApiEnvelope, CurrentTerm } from "../page";
+import SessionTermFilterBar from "./SessionTermFilterBar";
+import type { ApiEnvelope, CurrentTerm, SessionListItem } from "../page";
 
 // ── Types ────────────────────────────────────────────────────────────────
 // Shape returned by GET pins/stats/school/ when a SchoolTermResultStat row
 // exists for the given (school, term, session) triple. The endpoint
-// returns `data: null` when there's no row yet — no pin activity has
-// been recorded — so consumers treat the stat as nullable throughout.
-// Declared locally here because this is the only page that reads it; a
-// prior copy lived on the broadsheet detail-page provider and moved with
-// the analytics card.
+// returns `data: null` when no row exists yet (no pin activity recorded),
+// so consumers treat the stat as nullable throughout.
 interface SchoolTermResultStat {
   id: string;
   school: { id: string; name: string; abbr?: string };
@@ -90,10 +104,6 @@ interface SchoolTermResultStat {
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
-// Shown when the user taps the placeholder session/term chips. Kept centralised
-// so the wording stays consistent if/when other placeholders appear.
-const FEATURE_IN_WORKS = "This feature is still in the works.";
-
 // "JSS 1 A" — full identifier used in row labels and dialogs.
 function formatArm(arm: ClassArm): string {
   return `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`;
@@ -108,22 +118,36 @@ interface PendingAdminAction {
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface BroadsheetsListProps {
-  /** School's current term chain, resolved server-side. Drives both the
-   *  scoping of the arms query and the labels on the placeholder filter chips. */
+  /** School's current term chain, resolved server-side. Seeds the initial
+   *  session/term selection and marks the live period in the dropdowns. */
   currentTerm: CurrentTerm;
-  /** Pre-fetched arms envelope, used as React Query initialData. */
+  /** Pre-fetched arms envelope for the current term. Used as React Query
+   *  initialData so first paint has no loading flash. */
   initialArms: ApiEnvelope<ClassArm[]> | null;
+  /** Pre-fetched sessions envelope (with nested terms). Powers the filter
+   *  bar dropdowns without a client-side fetch delay. */
+  initialSessions: ApiEnvelope<SessionListItem[]> | null;
 }
 
 export default function BroadsheetsList({
   currentTerm,
   initialArms,
+  initialSessions,
 }: BroadsheetsListProps) {
   const router = useRouter();
   const { clientAuthFetch } = useClientAuthFetch();
 
   // ── Local UI state ────────────────────────────────────────────────────────
+
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Selected session/term ids. Defaulted to the school's live period so the
+  // page opens on the current term; the filter bar owns the dropdown UI and
+  // emits a single onChange for both ids.
+  const [selectedSessionId, setSelectedSessionId] = useState(
+    currentTerm.session.id,
+  );
+  const [selectedTermId, setSelectedTermId] = useState(currentTerm.id);
 
   // When set, BroadsheetAdminActionModal renders for this arm + action.
   const [pendingAction, setPendingAction] = useState<PendingAdminAction | null>(
@@ -134,16 +158,38 @@ export default function BroadsheetsList({
   // per-arm action modal so they can never collide.
   const [publishModalOpen, setPublishModalOpen] = useState(false);
 
+  // ── React Query: sessions list ───────────────────────────────────────────
+  // Powers the filter bar's dropdowns. Session list changes only at
+  // term-boundary events, so it's safe to skip the focus refetch — the
+  // server-hydrated initialData is nearly always right.
+  const { data: sessionsData, isPending: sessionsPending } = useQuery<
+    ApiEnvelope<SessionListItem[]>
+  >({
+    queryKey: ["broadsheet-sessions", SCHOOL_ID],
+    queryFn: async () => {
+      const { data, error } = await clientAuthFetch<
+        ApiEnvelope<SessionListItem[]>
+      >(`session/list/?school-id=${SCHOOL_ID}`);
+      if (error) throw new Error(error.message);
+      return data!;
+    },
+    initialData: initialSessions ?? undefined,
+    initialDataUpdatedAt: initialSessions ? Date.now() : undefined,
+    refetchOnWindowFocus: false,
+  });
+
+  const sessions = sessionsData?.data ?? [];
+
   // ── React Query: arms list ────────────────────────────────────────────────
-  // The query key includes currentTerm.id so once the session/term filter is
-  // wired, changing the term picks up a fresh query without cross-contaminating
-  // the currently-cached term's rows.
+  // Keyed on selectedTermId so switching term (via the filter bar) picks up
+  // a fresh cached query without cross-contaminating the previously-selected
+  // term's rows.
   const { data, isPending, isError, error } = useQuery<ApiEnvelope<ClassArm[]>>(
     {
-      queryKey: ["broadsheet-arms", SCHOOL_ID, currentTerm.id],
+      queryKey: ["broadsheet-arms", SCHOOL_ID, selectedTermId],
 
       queryFn: async () => {
-        const url = `arm/list/?school-id=${SCHOOL_ID}&term-id=${currentTerm.id}`;
+        const url = `arm/list/?school-id=${SCHOOL_ID}&term-id=${selectedTermId}`;
         const { data, error } =
           await clientAuthFetch<ApiEnvelope<ClassArm[]>>(url);
 
@@ -154,37 +200,47 @@ export default function BroadsheetsList({
       },
 
       // Hydrate from the server-fetched envelope so the table renders instantly
-      // on first paint. initialDataUpdatedAt tells React Query the data is
-      // fresh so it doesn't fire an immediate background refetch on mount.
-      initialData: initialArms ?? undefined,
-      initialDataUpdatedAt: initialArms ? Date.now() : undefined,
+      // on first paint for the current term. Once the user switches to a
+      // different term, that query key has no initialData and fetches normally.
+      initialData:
+        selectedTermId === currentTerm.id
+          ? (initialArms ?? undefined)
+          : undefined,
+      initialDataUpdatedAt:
+        selectedTermId === currentTerm.id && initialArms
+          ? Date.now()
+          : undefined,
+      // Only fire once a term id is available. In practice this is true from
+      // mount because the state defaults to currentTerm.id — the gate covers
+      // the edge case of a session with no terms being selected later.
+      enabled: !!selectedTermId,
     },
   );
 
   // ── React Query: school pin-usage rollup ─────────────────────────────────
-  // GET pins/stats/school/ returns a SchoolTermResultStat row per (school,
-  // term, session) triple. All three ids come from props/env, so the query
-  // fires immediately. The endpoint returns `data: null` — not an error —
-  // when no pin activity has been recorded yet, which the Results Access
-  // card below renders as an empty-state row rather than a spinner.
+  // Scoped to the same term + session the arms table is showing so both
+  // cards refer to the same period. The endpoint returns `data: null` — not
+  // an error — when no pin activity has been recorded, which the Results
+  // Access card below renders as zeros rather than a spinner.
   const { data: schoolAccessStatData, isPending: schoolAccessStatPending } =
     useQuery<ApiEnvelope<SchoolTermResultStat | null>>({
       queryKey: [
         "broadsheet-school-access-stat",
         SCHOOL_ID,
-        currentTerm.id,
-        currentTerm.session.id,
+        selectedTermId,
+        selectedSessionId,
       ],
       queryFn: async () => {
         const url =
           `pins/stats/school/?school-id=${SCHOOL_ID}` +
-          `&term-id=${currentTerm.id}` +
-          `&session-id=${currentTerm.session.id}`;
+          `&term-id=${selectedTermId}` +
+          `&session-id=${selectedSessionId}`;
         const { data, error } =
           await clientAuthFetch<ApiEnvelope<SchoolTermResultStat | null>>(url);
         if (error) throw new Error(error.message);
         return data!;
       },
+      enabled: !!selectedTermId && !!selectedSessionId,
       refetchOnWindowFocus: false,
     });
 
@@ -202,6 +258,12 @@ export default function BroadsheetsList({
   // ── Derived data ──────────────────────────────────────────────────────────
 
   const arms: ClassArm[] = data?.data ?? [];
+
+  // True whenever the selected term isn't the school's live one. Everything
+  // gated on read-only mode (action menus hidden, publish button becomes a
+  // Published tag, progress strip switches to a published pill) reads from
+  // this single derived flag.
+  const isPreviousTerm = selectedTermId !== currentTerm.id;
 
   // Apply text search. No other narrowing filters remain in this toolbar.
   const visibleArms = useMemo(() => {
@@ -243,33 +305,25 @@ export default function BroadsheetsList({
     setPendingAction({ action: "revoke", arm });
   }
 
-  // Session/term placeholder chips share one handler — swapping between the
-  // two is not wired yet, so both tell the user the same thing.
-  function handlePlaceholderFilter() {
-    toast.info(FEATURE_IN_WORKS);
+  // Filter bar always emits both ids together, so a single setter pair keeps
+  // them in sync without race conditions between two separate onChanges.
+  function handleFilterChange(sessionId: string, termId: string) {
+    setSelectedSessionId(sessionId);
+    setSelectedTermId(termId);
   }
 
   return (
     <>
-      {/* ── Session / Term placeholder filter row ───────────────────────────
-          Two chips displaying the current session and current term names.
-          Clicking either fires a "feature in the works" toast for now; once
-          the backend exposes prior-session/term listings these become real
-          dropdowns and the query key already handles the switchover. */}
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <PlaceholderFilterChip
-          Icon={CalendarRange}
-          label="Session"
-          value={currentTerm.session.name}
-          onClick={handlePlaceholderFilter}
-        />
-        <PlaceholderFilterChip
-          Icon={CalendarClock}
-          label="Term"
-          value={currentTerm.name}
-          onClick={handlePlaceholderFilter}
-        />
-      </div>
+      {/* ── Session / Term filter row ─────────────────────────────────── */}
+      <SessionTermFilterBar
+        sessions={sessions}
+        selectedSessionId={selectedSessionId}
+        selectedTermId={selectedTermId}
+        currentSessionId={currentTerm.session.id}
+        currentTermId={currentTerm.id}
+        onChange={handleFilterChange}
+        isLoading={sessionsPending}
+      />
 
       {/* ── Top status row — progress + access analytics ─────────────────
           Two side-by-side cards at md+: on the left the arm-approval
@@ -278,21 +332,24 @@ export default function BroadsheetsList({
           (grid's default) keeps both cards the same height regardless of
           which side has slightly more content. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {/* <TermProgressStrip
+        <TermProgressStrip
           approved={termStats.approved}
           pending={termStats.pending}
           total={termStats.total}
           allApproved={termStats.allApproved}
           isPending={isPending}
-        /> */}
+          isPreviousTerm={isPreviousTerm}
+        />
         <SchoolAccessCard
           stat={schoolAccessStat}
           isPending={schoolAccessStatPending}
         />
       </div>
 
-      {/* ── Toolbar ─ Search + Publish ─────────────────────────────────────
-          Search stacks above Publish on mobile and sits inline on sm+. */}
+      {/* ── Toolbar ─ Search + Publish / Published ─────────────────────────
+          Search stacks above the trailing control on mobile and sits inline
+          on sm+. Current term shows the Publish button; previous terms show
+          a static Published tag in its place. */}
       <div className="flex flex-col sm:flex-row gap-2 mb-6">
         {/* Search */}
         <div className="relative flex-1">
@@ -309,20 +366,26 @@ export default function BroadsheetsList({
           />
         </div>
 
-        {/* Publish Term Results — opens BroadsheetPublishModal. Always
-            enabled; the modal explains the action and the backend will
-            ultimately enforce its own preconditions. Full-width on mobile
-            to match the search input above it; content-sized on sm+. */}
-        {/* <button
-          type="button"
-          onClick={() => setPublishModalOpen(true)}
-          className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-sm shadow-violet-200 transition-colors whitespace-nowrap"
-          aria-label="Publish term results"
-        >
-          <Globe size={12} />
-          <span className="hidden sm:inline">Publish Results</span>
-          <span className="sm:hidden">Publish</span>
-        </button> */}
+        {isPreviousTerm ? (
+          // Previous term: the term's results are already published. Replace
+          // the action with a static tag so the toolbar still balances the
+          // search field and the read-only state reads clearly.
+          <PublishedTag />
+        ) : (
+          // Current term: Publish Term Results opens BroadsheetPublishModal.
+          // Always enabled here; the modal explains the action and the
+          // backend enforces its own preconditions.
+          <button
+            type="button"
+            onClick={() => setPublishModalOpen(true)}
+            className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-sm shadow-violet-200 transition-colors whitespace-nowrap"
+            aria-label="Publish term results"
+          >
+            <Globe size={12} />
+            <span className="hidden sm:inline">Publish Results</span>
+            <span className="sm:hidden">Publish</span>
+          </button>
+        )}
       </div>
 
       {/* ── List body ───────────────────────────────────────────────────── */}
@@ -330,7 +393,9 @@ export default function BroadsheetsList({
         <TableLoader rows={6} className="my-4" />
       ) : (
         <>
-          {/* Desktop table (md+) */}
+          {/* Desktop table (md+). The Action column and every row's
+              action-menu cell are omitted entirely on previous terms —
+              there are no admin actions to expose in that state. */}
           <div className="hidden md:block border border-indigo-100 rounded-2xl overflow-hidden">
             <table className="w-full text-xs">
               <thead>
@@ -339,13 +404,17 @@ export default function BroadsheetsList({
                   <th className="px-5 py-3 font-semibold">Class Arm</th>
                   <th className="px-5 py-3 font-semibold">Section</th>
                   <th className="px-5 py-3 font-semibold">Broadsheet Status</th>
-                  <th className="px-5 py-3 font-semibold">Action</th>
+                  {!isPreviousTerm && (
+                    <th className="px-5 py-3 font-semibold">Action</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-50">
                 {visibleArms.length === 0 ? (
                   <tr>
-                    <td colSpan={5}>
+                    {/* colSpan matches the visible column count so the empty
+                        state stretches across the whole table body. */}
+                    <td colSpan={isPreviousTerm ? 4 : 5}>
                       <EmptyState
                         variant={searchQuery ? "search" : "generic"}
                         title={
@@ -356,7 +425,7 @@ export default function BroadsheetsList({
                         description={
                           searchQuery
                             ? `No arms match "${searchQuery}".`
-                            : "There are no class arms set up for the current term."
+                            : "There are no class arms recorded for this term."
                         }
                       />
                     </td>
@@ -373,8 +442,7 @@ export default function BroadsheetsList({
 
                       <td className="px-5">
                         <Link
-                          // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
-                          href="/dashboard/broadsheet/arms"
+                          href={`/dashboard/broadsheet/arm?id=${arm.id}`}
                           className="font-medium text-slate-800 hover:text-violet-700"
                         >
                           {formatArm(arm)}
@@ -389,15 +457,20 @@ export default function BroadsheetsList({
                         <BroadsheetStatusBadge status={arm.broadsheet} />
                       </td>
 
-                      <td className="px-5" onClick={(e) => e.stopPropagation()}>
-                        {/* <BroadsheetsListActionMenu
-                          armId={arm.id}
-                          status={arm.broadsheet}
-                          onView={() => handleView(arm)}
-                          onApprove={() => handleApprove(arm)}
-                          onRevoke={() => handleRevoke(arm)}
-                        /> */}
-                      </td>
+                      {!isPreviousTerm && (
+                        <td
+                          className="px-5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <BroadsheetsListActionMenu
+                            armId={arm.id}
+                            status={arm.broadsheet}
+                            onView={() => handleView(arm)}
+                            onApprove={() => handleApprove(arm)}
+                            onRevoke={() => handleRevoke(arm)}
+                          />
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -405,7 +478,9 @@ export default function BroadsheetsList({
             </table>
           </div>
 
-          {/* Mobile cards (below md) */}
+          {/* Mobile cards (below md). The action menu is omitted on
+              previous terms; the arm name remains a link so viewing is
+              still one tap away. */}
           <div className="flex flex-col gap-3 md:hidden my-4">
             {visibleArms.length === 0 ? (
               <EmptyState
@@ -414,7 +489,7 @@ export default function BroadsheetsList({
                 description={
                   searchQuery
                     ? `No arms match "${searchQuery}".`
-                    : "There are no class arms set up for the current term."
+                    : "There are no class arms recorded for this term."
                 }
               />
             ) : (
@@ -425,8 +500,7 @@ export default function BroadsheetsList({
                 >
                   <div className="flex items-start justify-between p-4 gap-3">
                     <Link
-                      // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
-                      href="/dashboard/broadsheet/arms"
+                      href={`/dashboard/broadsheet/arm?id=${arm.id}`}
                       className="flex flex-col min-w-0 flex-1"
                     >
                       <span className="text-sm font-semibold text-slate-800 truncate">
@@ -436,15 +510,17 @@ export default function BroadsheetsList({
                         {arm.level.section.name}
                       </span>
                     </Link>
-                    <div onClick={(e) => e.stopPropagation()}>
-                      {/* <BroadsheetsListActionMenu
-                        armId={arm.id}
-                        status={arm.broadsheet}
-                        onView={() => handleView(arm)}
-                        onApprove={() => handleApprove(arm)}
-                        onRevoke={() => handleRevoke(arm)}
-                      /> */}
-                    </div>
+                    {!isPreviousTerm && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <BroadsheetsListActionMenu
+                          armId={arm.id}
+                          status={arm.broadsheet}
+                          onView={() => handleView(arm)}
+                          onApprove={() => handleApprove(arm)}
+                          onRevoke={() => handleRevoke(arm)}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="px-4 pb-4">
@@ -459,7 +535,9 @@ export default function BroadsheetsList({
 
       {/* ── Approve / Revoke modal ─────────────────────────────────────────
           Conditionally rendered so each open is a fresh instance with no
-          lingering error state from the previous attempt. */}
+          lingering error state from the previous attempt. Only ever set
+          for current-term rows since the action menu is the only entry
+          point and it's suppressed on previous terms. */}
       {pendingAction && (
         <BroadsheetAdminActionModal
           action={pendingAction.action}
@@ -470,10 +548,8 @@ export default function BroadsheetsList({
       )}
 
       {/* ── Publish Term Results modal ─────────────────────────────────────
-          Surfaces the irreversibility of publishing and (for now) hands off
-          to a "feature in works" toast since the backend trigger isn't
-          ready yet. Approval counts are passed through so the modal can
-          show the admin where they are in the approval cycle. */}
+          Surfaces the irreversibility of publishing and shows the current
+          approval counts so the admin sees where they are in the cycle. */}
       {publishModalOpen && (
         <BroadsheetPublishModal
           approvedCount={termStats.approved}
@@ -486,52 +562,45 @@ export default function BroadsheetsList({
   );
 }
 
-// ── PlaceholderFilterChip ────────────────────────────────────────────────────
-// Chip-style button used for the session/term placeholder filters. Visually
-// consistent with the section filter chip so the user reads them as the same
-// kind of control; the parent's `onClick` today just fires a toast.
-function PlaceholderFilterChip({
-  Icon,
-  label,
-  value,
-  onClick,
-}: {
-  Icon: typeof CalendarRange;
-  label: string;
-  value: string;
-  onClick: () => void;
-}) {
+// ── PublishedTag ─────────────────────────────────────────────────────────
+// Static "Published" pill shown in the toolbar in place of the Publish
+// Results button when a previous term is selected. Sized to match the
+// button's footprint so the toolbar layout stays balanced across the
+// current/previous switch. Uses the same green language as the TermResults
+// indicator on the single-arm broadsheet page so the "published" state
+// reads the same everywhere in the feature.
+function PublishedTag() {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="cursor-pointer flex flex-1 items-center gap-2 px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl hover:border-violet-300 transition-colors"
+    <div
+      className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 whitespace-nowrap"
+      role="status"
+      aria-label="Term results are published"
     >
-      <Icon size={13} className="text-slate-400 shrink-0" />
-      <span className="text-slate-400 shrink-0">{label}:</span>
-      <span className="font-medium text-slate-700 truncate">{value}</span>
-      <ChevronDown size={12} className="text-slate-400 ml-auto shrink-0" />
-    </button>
+      <CheckCircle2 size={12} />
+      <span>Published</span>
+    </div>
   );
 }
 
 // ── TermProgressStrip ─────────────────────────────────────────────────────────
-// Compact info strip that summarises how far through the term's broadsheet
-// approvals the admin is. Publishing the term results is now a manual,
-// admin-triggered action (via the toolbar's Publish Results button), so the
-// strip's job is to surface readiness — not derive a published state.
+// Compact info strip that summarises the term's broadsheet approvals. For
+// the current term it surfaces readiness — how close the term is to being
+// publishable. For previous terms it displays a static Published state
+// alongside the historical approval counts.
 function TermProgressStrip({
   approved,
   pending,
   total,
   allApproved,
   isPending,
+  isPreviousTerm,
 }: {
   approved: number;
   pending: number;
   total: number;
   allApproved: boolean;
   isPending: boolean;
+  isPreviousTerm: boolean;
 }) {
   if (isPending) {
     return (
@@ -539,11 +608,15 @@ function TermProgressStrip({
     );
   }
 
-  // Readiness label — reflects how close the term is to being publishable.
-  // The actual published state lives on Term.results_status and will be
-  // surfaced separately when the backend exposes it on the list endpoint.
+  // Readiness label — reflects how close the term is to being publishable
+  // for the current term, or a fixed Published state for previous terms.
   let readiness: { label: string; classes: string };
-  if (total === 0) {
+  if (isPreviousTerm) {
+    readiness = {
+      label: "Published",
+      classes: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    };
+  } else if (total === 0) {
     readiness = {
       label: "Not Set Up",
       classes: "bg-slate-100 text-slate-600 border-slate-200",
@@ -568,19 +641,27 @@ function TermProgressStrip({
   // Progress bar width — guard against division by zero on the empty case.
   const progressPercent = total === 0 ? 0 : (approved / total) * 100;
 
+  // Card title varies per mode so the strip's purpose is unambiguous.
+  const cardTitle = isPreviousTerm
+    ? "Term Results Status"
+    : "Term Approval Progress";
+
+  // Progress bar colour — emerald when everything is signed off (or the
+  // term is a historical published one), violet during in-progress terms.
+  const progressBarColor =
+    isPreviousTerm || allApproved ? "bg-emerald-500" : "bg-violet-500";
+
   return (
     <div className="rounded-2xl border border-indigo-100 bg-white p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-3">
       {/* Title — pinned to the top of the card by justify-between placing
           the first flex item at the start of the main axis. */}
       <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
-        Term Approval Progress
+        {cardTitle}
       </p>
 
       {/* Status — readiness pill and count summary. Sits vertically
           centered between the title above and the progress bar below
-          when the grid stretches this card to match its sibling. With
-          three items and justify-between, the two remaining gaps are
-          equal, so the middle item lands centered by construction. */}
+          when the grid stretches this card to match its sibling. */}
       <div className="flex items-center gap-2 flex-wrap">
         <span
           className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${readiness.classes}`}
@@ -604,9 +685,7 @@ function TermProgressStrip({
         aria-valuemax={total}
       >
         <div
-          className={`h-full rounded-full transition-all duration-500 ${
-            allApproved ? "bg-emerald-500" : "bg-violet-500"
-          }`}
+          className={`h-full rounded-full transition-all duration-500 ${progressBarColor}`}
           style={{ width: `${progressPercent}%` }}
         />
       </div>

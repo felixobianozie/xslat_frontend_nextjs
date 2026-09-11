@@ -2,16 +2,12 @@
 // /dashboard/broadsheet/arms/page.tsx
 //
 // Server Component for the /dashboard/broadsheet/arms route. Responsible for:
-//   1. Resolving the school's current term (every downstream call needs a term-id).
-//   2. Pre-fetching the arms envelope so React Query hydrates without a flash.
-//   3. Passing the resolved term + initial arms down to BroadsheetsList.
-//
-// Design mirrors /dashboard/arms/page.tsx (same fetch pattern, same fallback for
-// "no current term set", same ApiEnvelope contract). Differences:
-//   - We don't need sections/levels here: there's no Create Arm panel on this
-//     page — arms are pre-existing and only their broadsheet state gets acted on.
-//   - We surface the current session + term names so BroadsheetsList can render
-//     its placeholder session/term filter chips without an extra fetch.
+//   1. Resolving the school's current term (every downstream default needs one).
+//   2. Pre-fetching the arms envelope for the current term so React Query
+//      hydrates without a loading flash on first paint.
+//   3. Pre-fetching the full session list (with nested terms) so the client's
+//      session/term filter bar renders its dropdowns immediately.
+//   4. Passing all three down to BroadsheetsList.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Metadata } from "next";
@@ -27,6 +23,8 @@ export const metadata: Metadata = {
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
+// ── Shared response types ────────────────────────────────────────────────────
+
 // Standard backend envelope shape — matches { message, data } returned by every
 // non-paginated endpoint in the academics + users modules. Exported so client
 // components on this subtree can reuse a single type without redefining it.
@@ -35,9 +33,30 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
+// Term row inside a session-list entry. Matches the field set requested by
+// SessionListView's include_term_fields = ("id", "name", "current") context.
+export interface SessionTermItem {
+  id: string;
+  name: string;
+  current: boolean;
+}
+
+// Session-list row. Field set matches SessionListView's include_session_fields
+// (id, name, starts, ends, current, initialized, terms).
+export interface SessionListItem {
+  id: string;
+  name: string;
+  starts: string;
+  ends: string | null;
+  current: boolean;
+  initialized: boolean;
+  terms: SessionTermItem[];
+}
+
 // Shape passed from this server component into BroadsheetsList. Carries just
-// enough of the resolved current-term chain for the client to (a) key the arm
-// query by term-id and (b) render the session/term filter placeholder labels.
+// enough of the resolved current-term chain for the client to (a) seed the
+// session/term selection defaults and (b) mark the live period inside the
+// dropdowns.
 export interface CurrentTerm {
   id: string;
   name: string;
@@ -75,9 +94,9 @@ async function fetchSchool(): Promise<SchoolDetail | null> {
   return data.data;
 }
 
-// Pre-fetches the broadsheet arms list so React Query can hydrate on first
-// render. Null on failure lets BroadsheetsList fall back to its own client
-// fetch (React Query will retry once mounted) rather than blocking the page.
+// Pre-fetches the broadsheet arms list for the given term so React Query can
+// hydrate on first render. Null on failure lets BroadsheetsList fall back to
+// its own client fetch rather than blocking the page.
 async function fetchInitialArms(
   termId: string,
 ): Promise<ApiEnvelope<ClassArm[]> | null> {
@@ -92,14 +111,32 @@ async function fetchInitialArms(
   return data;
 }
 
+// Pre-fetches every session (with nested terms) for the school so the
+// client's filter bar can render its dropdowns immediately. Null on failure
+// lets the client query retry.
+async function fetchInitialSessions(): Promise<ApiEnvelope<
+  SessionListItem[]
+> | null> {
+  const { data, error } = await serverAuthFetch<ApiEnvelope<SessionListItem[]>>(
+    `session/list/?school-id=${SCHOOL_ID}`,
+  );
+
+  if (error || !data) {
+    console.error("Failed to fetch broadsheet session list:", error?.message);
+    return null;
+  }
+  return data;
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function BroadsheetsListPage() {
   const school = await fetchSchool();
   const currentTerm = school?.current_term ?? null;
 
-  // Without a current term, arm/list/ can't be called. Render an actionable
-  // explanation rather than firing off a doomed request.
+  // Without a current term, arm/list/ can't be called for the default term
+  // and the "which period is live" marker downstream has nothing to point at.
+  // Render an actionable explanation rather than a stuck page.
   if (!currentTerm) {
     return (
       <div className="space-y-6">
@@ -117,7 +154,11 @@ export default async function BroadsheetsListPage() {
     );
   }
 
-  const initialArms = await fetchInitialArms(currentTerm.id);
+  // Fire arms + sessions fetches in parallel — neither depends on the other.
+  const [initialArms, initialSessions] = await Promise.all([
+    fetchInitialArms(currentTerm.id),
+    fetchInitialSessions(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -138,6 +179,7 @@ export default async function BroadsheetsListPage() {
           session: currentTerm.session,
         }}
         initialArms={initialArms}
+        initialSessions={initialSessions}
       />
     </div>
   );
