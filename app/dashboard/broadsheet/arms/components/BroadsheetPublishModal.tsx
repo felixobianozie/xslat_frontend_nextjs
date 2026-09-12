@@ -135,7 +135,7 @@ export default function BroadsheetPublishModal({
             </h3>
             <ul className="flex flex-col gap-1.5">
               {[
-                "The term's assessment is locked — scores and remarks become read-only.",
+                "The term's assessment is locked. Scores and remarks become read-only.",
                 "Approved broadsheets are finalised for the term.",
                 "Results are made available for public consumption.",
               ].map((bullet) => (
@@ -165,7 +165,7 @@ export default function BroadsheetPublishModal({
                 </h3>
                 <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
                   Once published, the term's results are permanently finalised.
-                  You will not be able to revert this — make sure every arm's
+                  You will not be able to revert this. Make sure every arm's
                   broadsheet is in the state you want before proceeding.
                 </p>
               </div>

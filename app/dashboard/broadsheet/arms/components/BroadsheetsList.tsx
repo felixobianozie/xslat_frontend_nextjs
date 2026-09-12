@@ -442,7 +442,8 @@ export default function BroadsheetsList({
 
                       <td className="px-5">
                         <Link
-                          href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                          // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                          href={`/dashboard/broadsheet/arms`}
                           className="font-medium text-slate-800 hover:text-violet-700"
                         >
                           {formatArm(arm)}
@@ -500,7 +501,8 @@ export default function BroadsheetsList({
                 >
                   <div className="flex items-start justify-between p-4 gap-3">
                     <Link
-                      href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                      // href={`/dashboard/broadsheet/arm?id=${arm.id}`}
+                      href={`/dashboard/broadsheet/arms`}
                       className="flex flex-col min-w-0 flex-1"
                     >
                       <span className="text-sm font-semibold text-slate-800 truncate">

@@ -46,7 +46,7 @@ export default function ArmTabArea() {
           panels without affecting sibling tabs. */}
       {activeIndex === 0 && <ClassMembersTab />}
       {activeIndex === 1 && <SubjectsTab />}
-      {/* {activeIndex === 2 && <ResultsTab />} */}
+      {activeIndex === 2 && <ResultsTab />}
       {activeIndex === 3 && <ClassTeacherTab />}
       {activeIndex === 4 && <GradingSystemTab />}
       {activeIndex === 5 && <PassRuleTab />}
