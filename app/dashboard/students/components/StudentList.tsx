@@ -44,7 +44,8 @@
 //    the toolbar and the table with a Bulk Assign Arm button.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { useCallback, useState, useRef, useEffect, FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useReactToPrint } from "react-to-print";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -89,15 +90,43 @@ const GENDER_LABELS: Record<string, string> = {
 };
 
 // ── Filter options — every option maps to a real GET student/list/ param ─────
-// Backend supports gender=<M|F|O> and no-arm=true as list-scoping filters, so
-// only those combinations are exposed here.
-type FilterOption = "all" | "gender:M" | "gender:F" | "no_arm:true";
+// Backend supports gender=<M|F|O>, no-arm=true, and status=<comma_list> as
+// list-scoping filters. The `status:leavers` sentinel value is expanded in
+// buildStudentsUrl to the four permanent-leave enum values so the toolbar's
+// "All Leavers" entry maps to one comma-list request.
+type FilterOption =
+  | "all"
+  | "gender:M"
+  | "gender:F"
+  | "no_arm:true"
+  | "status:graduated"
+  | "status:withdrawn"
+  | "status:expelled"
+  | "status:transferred_out"
+  | "status:leavers";
 
-const FILTER_OPTIONS: { label: string; value: FilterOption }[] = [
+// Expanded form of the `leavers` sentinel — matches PERMANENT_LEAVE_STATUSES
+// on the backend (academics.models.StudentPortfolio). Kept as a single
+// constant so the four-value list has one source of truth.
+const LEAVERS_STATUS_LIST = "graduated,withdrawn,expelled,transferred_out";
+
+// FILTER_OPTIONS shape: `groupStart` marks the first option in a visual
+// grouping so the dropdown renders a divider before it. Groups are:
+// (all) → gender → enrollment → status.
+const FILTER_OPTIONS: {
+  label: string;
+  value: FilterOption;
+  groupStart?: boolean;
+}[] = [
   { label: "All Students", value: "all" },
-  { label: "Male", value: "gender:M" },
+  { label: "Male", value: "gender:M", groupStart: true },
   { label: "Female", value: "gender:F" },
-  { label: "Unenrolled", value: "no_arm:true" },
+  { label: "Unenrolled", value: "no_arm:true", groupStart: true },
+  { label: "Graduated", value: "status:graduated", groupStart: true },
+  { label: "Withdrawn", value: "status:withdrawn" },
+  { label: "Expelled", value: "status:expelled" },
+  { label: "Transferred Out", value: "status:transferred_out" },
+  { label: "All Leavers", value: "status:leavers" },
 ];
 
 // ── Sort options — every option maps to a real GET student/list/ ordering ────
@@ -167,6 +196,11 @@ function buildStudentsUrl(
       params.set("gender", val);
     } else if (param === "no_arm") {
       params.set("no-arm", val);
+    } else if (param === "status") {
+      // Expand the `leavers` sentinel into the four permanent-leave enum
+      // values; any other status filter passes its value through as-is.
+      const statusVal = val === "leavers" ? LEAVERS_STATUS_LIST : val;
+      params.set("status", statusVal);
     }
   }
 
@@ -259,7 +293,12 @@ export default function StudentList({ initialData }: StudentListProps) {
   >(new Map());
 
   // Refs
-  const filterDropdownRef = useRef<HTMLDivElement>(null);
+  // Filter dropdown uses two refs because its panel is rendered in a portal
+  // to escape the enclosing `overflow-hidden` panel wrapper — the trigger
+  // ref anchors the panel's computed position, and both refs together
+  // define what counts as "inside" for the outside-click handler.
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
   // Ref for the header checkbox so we can set its `indeterminate` HTML
@@ -267,15 +306,56 @@ export default function StudentList({ initialData }: StudentListProps) {
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const handlePrint = useReactToPrint({ contentRef: printRef });
 
-  // Close either dropdown when the user clicks anywhere outside it. Both
-  // dropdowns share one listener so we don't register two mousedown handlers.
+  // ── Filter dropdown portal positioning ─────────────────────────────────────
+  // Panel width in pixels — matches the visual size the inline dropdown had
+  // (Tailwind w-52 = 13rem = 208px). Kept as a literal so the position math
+  // below and the panel's inline width style stay in sync.
+  const FILTER_PANEL_WIDTH = 208;
+
+  const [filterPanelPos, setFilterPanelPos] = useState<{
+    top: number;
+    left: number;
+  }>({ top: 0, left: 0 });
+
+  // Compute the panel's viewport position from the trigger button's rect.
+  // The panel's right edge aligns with the trigger's right edge (matching
+  // the inline `right-0` positioning it had before), sitting 4px below the
+  // trigger to leave a small visual gap.
+  const updateFilterPanelPos = useCallback(() => {
+    if (!filterTriggerRef.current) return;
+    const rect = filterTriggerRef.current.getBoundingClientRect();
+    setFilterPanelPos({
+      top: rect.bottom + 4,
+      left: rect.right - FILTER_PANEL_WIDTH,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (filterDropdownOpen) updateFilterPanelPos();
+  }, [filterDropdownOpen, updateFilterPanelPos]);
+
+  // Keep the portalled panel anchored while the user scrolls or resizes.
+  // `useCapture: true` on scroll catches ancestor scroll containers too.
+  useEffect(() => {
+    if (!filterDropdownOpen) return;
+    window.addEventListener("scroll", updateFilterPanelPos, true);
+    window.addEventListener("resize", updateFilterPanelPos);
+    return () => {
+      window.removeEventListener("scroll", updateFilterPanelPos, true);
+      window.removeEventListener("resize", updateFilterPanelPos);
+    };
+  }, [filterDropdownOpen, updateFilterPanelPos]);
+
+  // Close either dropdown when the user clicks anywhere outside it. The
+  // filter dropdown considers both its trigger and its portalled panel as
+  // "inside" — clicks on either shouldn't dismiss the menu.
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
       const target = e.target as Node;
-      if (
-        filterDropdownRef.current &&
-        !filterDropdownRef.current.contains(target)
-      ) {
+      const insideFilter =
+        filterTriggerRef.current?.contains(target) ||
+        filterPanelRef.current?.contains(target);
+      if (!insideFilter) {
         setFilterDropdownOpen(false);
       }
       if (
@@ -651,15 +731,22 @@ export default function StudentList({ initialData }: StudentListProps) {
 
             {/* Filter, Sort, Print and Create — one right-aligned group. On
                 mobile Create jumps to the visual leftmost slot via
-                `order-first`, which keeps Filter and Sort near the right edge
-                so their `right-0`-positioned menus never clip past the left
-                side of the viewport. On md+ the natural DOM order is
-                restored via `md:order-none` and Create returns to its usual
-                rightmost position. Print is hidden below md. */}
+                `order-first`, which keeps Sort near the right edge so its
+                `right-0`-positioned menu never extends past the left side
+                of the viewport. The Filter panel is portalled with computed
+                positioning, so its placement stays consistent regardless of
+                where the trigger sits in the toolbar. On md+ the natural
+                DOM order is restored via `md:order-none` and Create returns
+                to its usual rightmost position. Print is hidden below md. */}
             <div className="flex gap-2 justify-end">
-              {/* Filter dropdown — outside-click handled by the shared effect */}
-              <div ref={filterDropdownRef} className="relative">
+              {/* Filter dropdown — the panel is rendered via a portal to
+                  document.body so it escapes the enclosing panel wrapper's
+                  overflow-hidden (needed for the slide-in-panel collapse
+                  animation) and flows freely over the table below when the
+                  option list is tall. */}
+              <div className="relative">
                 <button
+                  ref={filterTriggerRef}
                   onClick={() => {
                     setFilterDropdownOpen((o) => !o);
                     setSortDropdownOpen(false);
@@ -677,31 +764,49 @@ export default function StudentList({ initialData }: StudentListProps) {
                   <span className="sm:hidden">Filter</span>
                 </button>
 
-                {filterDropdownOpen && (
-                  <div
-                    role="menu"
-                    className="absolute top-10 right-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-44 sm:w-52 py-1"
-                  >
-                    {FILTER_OPTIONS.map((opt) => {
-                      const isActive = activeFilter === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          role="menuitem"
-                          onClick={() => handleFilterChange(opt.value)}
-                          className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
-                            isActive
-                              ? "bg-violet-50 text-violet-700 font-semibold"
-                              : "text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          <span>{opt.label}</span>
-                          {isActive && <Check size={12} />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                {filterDropdownOpen &&
+                  createPortal(
+                    <div
+                      ref={filterPanelRef}
+                      role="menu"
+                      style={{
+                        position: "fixed",
+                        top: filterPanelPos.top,
+                        left: filterPanelPos.left,
+                        width: FILTER_PANEL_WIDTH,
+                        zIndex: 9999,
+                      }}
+                      className="bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden py-1 max-h-[70vh] overflow-y-auto"
+                    >
+                      {FILTER_OPTIONS.map((opt) => {
+                        const isActive = activeFilter === opt.value;
+                        return (
+                          <div key={opt.value}>
+                            {/* Thin divider before the first entry in each
+                                new group (gender, enrollment, status). Skipped
+                                on the very first option so the list doesn't
+                                open with a divider. */}
+                            {opt.groupStart && (
+                              <div className="my-1 border-t border-slate-100" />
+                            )}
+                            <button
+                              role="menuitem"
+                              onClick={() => handleFilterChange(opt.value)}
+                              className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
+                                isActive
+                                  ? "bg-violet-50 text-violet-700 font-semibold"
+                                  : "text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {isActive && <Check size={12} />}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>,
+                    document.body,
+                  )}
               </div>
 
               {/* Sort dropdown — same interaction pattern as the filter */}

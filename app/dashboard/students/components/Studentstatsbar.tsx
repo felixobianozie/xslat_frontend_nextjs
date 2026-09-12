@@ -171,13 +171,13 @@ export default function StudentStatsBar() {
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-      {/* Active / Historic — current on-books count vs all-time roll.
-          Active is emphasised with the primary violet accent; Historic
+      {/* Current / Historic — current on-books count vs all-time roll.
+          Current is emphasised with the primary violet accent; Historic
           uses a muted slate accent to read as reference data. */}
       <CombinedStatCard
         entries={[
           {
-            label: "Active Total",
+            label: "Current Total",
             value: currentTotal,
             icon: <Users size={16} className="text-violet-600" />,
             accent: "bg-violet-50",
