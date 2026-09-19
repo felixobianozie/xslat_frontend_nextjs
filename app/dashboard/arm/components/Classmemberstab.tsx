@@ -14,6 +14,10 @@
 //  - Sort dropdown backed by the ?ordering= whitelist on student/list/. The
 //    default is Gender (Z → A) so male students appear before female ones.
 //  - Print button, hidden below sm so the phone toolbar stays compact.
+//    Prints in A4 with portrait as the default preview, black horizontal
+//    row borders, a repeating table header on every page, and page numbers
+//    in the footer. Landscape remains available from the print dialog.
+//    See CLASS_ROSTER_PRINT_STYLE for the full print-media CSS.
 //  - Add Member (primary action) sits at the visual leftmost slot on mobile
 //    via `order-first` to keep the sort dropdown near the right edge, then
 //    returns to its natural rightmost slot on md+.
@@ -64,6 +68,118 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 // class sizes above 100 would need true pagination, which is acceptable as
 // a future refinement rather than a launch blocker.
 const ROSTER_PAGE_SIZE = 100;
+
+// ── Print stylesheet ─────────────────────────────────────────────────────────
+// CSS injected into the print document by react-to-print via `pageStyle`.
+//
+// Tailwind cannot express paged-media rules (`@page`, `@bottom-right`,
+// `page-break-inside`, header repetition) — those are the ONLY things this
+// stylesheet controls. All other visual styling for the print template lives
+// in the JSX below via ordinary Tailwind classes.
+//
+// Orientation: the `@page` size is A4 with no orientation keyword. Browsers
+// open the print preview in portrait by default (that is the browser default
+// when no orientation is specified) and leave the orientation dropdown
+// available so the user can switch to landscape when they need to.
+// Specifying `size: A4 portrait` here would LOCK the dropdown — omitting the
+// keyword is the deliberate choice that keeps the override path open.
+//
+// Density target (portrait): at 9pt body font with ~2.5pt vertical row
+// padding, a portrait A4 page (297mm × 210mm) with the margins set below
+// leaves enough vertical room for 40+ student rows once the arm-label banner
+// and the repeating table header are accounted for. In landscape (user
+// override) the per-page count naturally drops to roughly 20–25 rows because
+// the page is shorter; layout, borders, header repetition, and page numbers
+// all continue to work.
+//
+// Monochrome-friendly: only black horizontal borders — no vertical rules, no
+// coloured backgrounds, no zebra striping — so nothing relies on colour
+// fidelity or ink coverage to be readable when photocopied.
+//
+// Page numbering: uses CSS Paged Media margin boxes with `counter(page)` and
+// `counter(pages)`. Fully supported in Chromium (Chrome/Edge), partially in
+// Firefox. Safari/WebKit does not render `@page` margin boxes — the page
+// content still prints correctly, only the footer numeric is absent there.
+const CLASS_ROSTER_PRINT_STYLE = `
+  @page {
+    size: A4;
+    margin: 10mm 12mm 14mm 12mm;
+
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 9pt;
+      color: #000;
+    }
+  }
+
+  @media print {
+    .class-roster-print {
+      color: #000;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    .class-roster-print .print-heading {
+      margin: 0 0 6pt 0;
+      padding: 0 0 4pt 0;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .class-roster-print .print-heading .arm-label {
+      font-size: 16pt;
+      margin-right: 6pt;
+    }
+    .class-roster-print .print-heading .rest {
+      font-size: 10pt;
+    }
+
+    .class-roster-print table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+      color: #000;
+    }
+
+    /* display: table-header-group makes the browser repeat the <thead> on
+       every printed page automatically — the "repeat table heading on
+       subsequent pages" requirement is enforced right here. */
+    .class-roster-print thead {
+      display: table-header-group;
+    }
+    .class-roster-print thead tr {
+      border-top: 1.5pt solid #000;
+      border-bottom: 1.5pt solid #000;
+    }
+    .class-roster-print thead th {
+      padding: 3pt 6pt;
+      text-align: left;
+      font-weight: 700;
+      background: transparent;
+    }
+
+    /* Rows: black horizontal borders only, no side rules, no fill.
+       page-break-inside prevents a single row from being split across
+       two pages, which would leave a half-row at the bottom of one
+       page and its bottom half at the top of the next. */
+    .class-roster-print tbody tr {
+      background: transparent;
+      border-bottom: 0.5pt solid #000;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .class-roster-print tbody td {
+      padding: 2.5pt 6pt;
+      line-height: 1.15;
+      vertical-align: middle;
+    }
+    /* A slightly thicker rule closes the table at the bottom so the last
+       page ends with a visible base line rather than a hairline. */
+    .class-roster-print tbody tr:last-child {
+      border-bottom: 1.5pt solid #000;
+    }
+  }
+`;
 
 // ── Gender labels ────────────────────────────────────────────────────────────
 const GENDER_LABELS: Record<string, string> = {
@@ -243,9 +359,13 @@ export default function ClassMembersTab() {
   // Print — documentTitle is the print-preview name and the default filename
   // when saving to PDF. Function form keeps it current with the latest `arm`
   // (school name is read off the arm chain so no extra request is needed).
+  // pageStyle injects the paged-media CSS (A4 sizing with portrait as the
+  // default preview, black horizontal borders, repeating table header, page
+  // numbers). Landscape stays selectable from the print dialog.
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: () => buildPrintTitle(arm),
+    pageStyle: CLASS_ROSTER_PRINT_STYLE,
   });
 
   // Close the sort dropdown when the user clicks anywhere outside it.
@@ -745,50 +865,41 @@ export default function ClassMembersTab() {
 
       {/* Hidden print template — replicates the on-screen column structure
           (S/N, Name, Student ID, Gender) minus the row action menu.
-          Layout parameters are tuned for print compactness so a typical
-          class of ~50 students fits within two printed pages: tighter
-          header padding and shorter row heights while keeping text-xs
-          readable. */}
+          Layout is controlled entirely by CLASS_ROSTER_PRINT_STYLE (see the
+          module-level constant). That stylesheet sets A4 with portrait as
+          the default preview (landscape still selectable in the print
+          dialog), a repeating table header, black horizontal row borders,
+          and a row density that fits at least 40 students per page in
+          portrait. This markup only carries the semantic scope hooks
+          (class-roster-print, print-heading, arm-label, rest) the
+          stylesheet targets. */}
       <div className="h-0 overflow-hidden">
-        <div ref={printRef} className="m-8">
-          {/* Print header:
-                <ARM LABEL>   CLASS ROSTER OF <SCHOOL NAME>
-              Arm label is set in a much larger font than the rest so the
-              class arm is the first thing the eye lands on when scanning a
-              printed roster. `items-center` vertically centres the two
-              differently-sized spans so they read as one balanced heading. */}
+        <div ref={printRef} className="class-roster-print">
           {(() => {
             const { armLabel, rest } = buildPrintHeader(arm);
             return (
-              <h1 className="font-bold py-2 uppercase tracking-wide flex items-center gap-3 flex-wrap">
-                {armLabel && <span className="text-2xl">{armLabel}</span>}
-                <span className="text-sm">{rest}</span>
+              <h1 className="print-heading">
+                {armLabel && <span className="arm-label">{armLabel}</span>}
+                <span className="rest">{rest}</span>
               </h1>
             );
           })()}
-          <table className="w-full text-xs border-collapse">
+          <table>
             <thead>
-              <tr className="border border-gray-300 text-left h-7">
-                <th className="px-3">S/N</th>
-                <th className="px-3">Name</th>
-                <th className="px-3">Student ID</th>
-                <th className="px-3">Gender</th>
+              <tr>
+                <th>S/N</th>
+                <th>Name</th>
+                <th>Student ID</th>
+                <th>Gender</th>
               </tr>
             </thead>
             <tbody>
               {students.map((s, index) => (
-                <tr
-                  key={s.id}
-                  className={`h-7 border-b border-gray-200 ${
-                    index % 2 === 0 ? "bg-indigo-50" : ""
-                  }`}
-                >
-                  <td className="px-3">{index + 1}</td>
-                  <td className="px-3">{fullName(s)}</td>
-                  <td className="px-3">{s.public_id ?? "—"}</td>
-                  <td className="px-3">
-                    {s.gender ? (GENDER_LABELS[s.gender] ?? "—") : "—"}
-                  </td>
+                <tr key={s.id}>
+                  <td>{index + 1}</td>
+                  <td>{fullName(s)}</td>
+                  <td>{s.public_id ?? "—"}</td>
+                  <td>{s.gender ? (GENDER_LABELS[s.gender] ?? "—") : "—"}</td>
                 </tr>
               ))}
             </tbody>

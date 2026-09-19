@@ -56,6 +56,10 @@ interface ArmSectionRef {
   id: string;
   name: string;
   abbr: string;
+  // Terminal flag from Section.terminal on the backend. At most one section
+  // per term may be terminal; every other section is non-terminal. Marks
+  // the last section of the school's programme (drives graduation).
+  terminal: boolean;
   // term may be omitted depending on the include_section_fields the caller used.
   term?: ArmTerm;
 }
@@ -64,6 +68,10 @@ interface ArmLevel {
   id: string;
   name: string;
   abbr: string;
+  // Terminal flag from Level.terminal on the backend. At most one level
+  // per section may be terminal; every other level is non-terminal. Marks
+  // the last level of a section (drives graduation alongside Section.terminal).
+  terminal: boolean;
   section: ArmSectionRef;
 }
 

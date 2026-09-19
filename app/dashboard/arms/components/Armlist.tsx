@@ -49,6 +49,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
+import TerminalStatusCell from "../../components/Terminalstatuscell";
 import ArmActionMenu from "./Armactionmenu";
 import ArmCreatePanel from "./Armcreatepanel";
 import ArmAssignTeachersPanel from "./Armassignteacherspanel";
@@ -371,10 +372,12 @@ export default function ArmList({
                     <tr className="bg-slate-100 text-left text-slate-500 border-b border-slate-200">
                       <th className="px-5 py-3 font-semibold">S/N</th>
                       <th className="px-5 py-3 font-semibold">Class</th>
-                      <th className="px-5 py-3 font-semibold">Section</th>
                       <th className="px-5 py-3 font-semibold">Class Teacher</th>
                       <th className="px-5 py-3 font-semibold hidden lg:table-cell">
                         Assistant
+                      </th>
+                      <th className="px-5 py-3 font-semibold">
+                        Terminal Status
                       </th>
                       <th className="px-5 py-3 font-semibold">Action</th>
                     </tr>
@@ -402,7 +405,7 @@ export default function ArmList({
                       visibleArms.map((arm, index) => (
                         <tr
                           key={arm.id}
-                          className={`h-14 hover:bg-violet-50/40 transition-colors cursor-pointer ${
+                          className={`h-14 hover:bg-violet-50 transition-colors cursor-pointer ${
                             index % 2 === 0 ? "bg-white" : "bg-indigo-50/30"
                           }`}
                         >
@@ -422,11 +425,6 @@ export default function ArmList({
                             </Link>
                           </td>
 
-                          {/* Section */}
-                          <td className="px-5 text-slate-600">
-                            {arm.level.section.name}
-                          </td>
-
                           {/* Class teacher */}
                           <td className="px-5">
                             <TeacherCell teacher={arm.class_teacher} />
@@ -436,6 +434,14 @@ export default function ArmList({
                               md table from overflowing on tablet widths */}
                           <td className="px-5 hidden lg:table-cell">
                             <TeacherCell teacher={arm.ass_class_teacher} />
+                          </td>
+
+                          {/* Terminal Status — Level / Section pair */}
+                          <td className="px-5">
+                            <TerminalStatusCell
+                              levelTerminal={arm.level.terminal}
+                              sectionTerminal={arm.level.section.terminal}
+                            />
                           </td>
 
                           {/* Action menu */}
@@ -502,6 +508,12 @@ export default function ArmList({
 
                       {/* Teachers — stacked so labels stay legible on narrow screens */}
                       <div className="flex flex-col gap-2 px-4 py-3 text-xs">
+                        <div className="pb-2 border-b border-slate-100">
+                          <TerminalStatusCell
+                            levelTerminal={arm.level.terminal}
+                            sectionTerminal={arm.level.section.terminal}
+                          />
+                        </div>
                         <MobileTeacherRow
                           label="Class teacher"
                           teacher={arm.class_teacher}

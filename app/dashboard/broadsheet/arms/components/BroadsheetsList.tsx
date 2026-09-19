@@ -75,6 +75,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import EmptyState from "../../../components/Emptystate";
 import TableLoader from "../../../components/Tableloader";
+import TerminalStatusCell from "../../../components/Terminalstatuscell";
 import BroadsheetStatusBadge from "./BroadsheetStatusBadge";
 import BroadsheetsListActionMenu from "./BroadsheetsListActionMenu";
 import BroadsheetAdminActionModal, {
@@ -402,8 +403,8 @@ export default function BroadsheetsList({
                 <tr className="bg-slate-100 text-left text-slate-500 border-b border-slate-200">
                   <th className="px-5 py-3 font-semibold">S/N</th>
                   <th className="px-5 py-3 font-semibold">Class Arm</th>
-                  <th className="px-5 py-3 font-semibold">Section</th>
                   <th className="px-5 py-3 font-semibold">Broadsheet Status</th>
+                  <th className="px-5 py-3 font-semibold">Terminal Status</th>
                   {!isPreviousTerm && (
                     <th className="px-5 py-3 font-semibold">Action</th>
                   )}
@@ -450,12 +451,15 @@ export default function BroadsheetsList({
                         </Link>
                       </td>
 
-                      <td className="px-5 text-slate-600">
-                        {arm.level.section.name}
+                      <td className="px-5">
+                        <BroadsheetStatusBadge status={arm.broadsheet} />
                       </td>
 
                       <td className="px-5">
-                        <BroadsheetStatusBadge status={arm.broadsheet} />
+                        <TerminalStatusCell
+                          levelTerminal={arm.level.terminal}
+                          sectionTerminal={arm.level.section.terminal}
+                        />
                       </td>
 
                       {!isPreviousTerm && (
@@ -525,7 +529,11 @@ export default function BroadsheetsList({
                     )}
                   </div>
 
-                  <div className="px-4 pb-4">
+                  <div className="px-4 pb-4 flex flex-col gap-3">
+                    <TerminalStatusCell
+                      levelTerminal={arm.level.terminal}
+                      sectionTerminal={arm.level.section.terminal}
+                    />
                     <BroadsheetStatusBadge status={arm.broadsheet} />
                   </div>
                 </div>
