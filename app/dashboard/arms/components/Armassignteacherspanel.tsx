@@ -45,6 +45,13 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 // the max so a single fetch usually covers the school in one go.
 const TEACHERS_PAGE_SIZE = 100;
 
+// Sentinel value for the "Remove Current Teacher" option in the teacher
+// <select>. The select uses three possible values: "" (no change, field
+// omitted from the PUT body), a teacher UUID (assign that teacher), or
+// this sentinel (send null to clear the existing assignment). The string
+// is namespaced so it cannot collide with a real UUID.
+const REMOVE_CURRENT = "__remove_current__";
+
 // ── Local response shape for the paginated staff portfolios endpoint ─────────
 // Mirrors xslat_backend.pagination.StandardPagination's envelope. Kept local
 // to this file so the panel stays self-contained.
@@ -89,8 +96,9 @@ export default function ArmAssignTeachersPanel({
   const queryClient = useQueryClient();
   const { clientAuthFetch } = useClientAuthFetch();
 
-  // Selected teacher ids — start empty; the user explicitly picks new values.
-  // Empty string means "no change" (we don't send the field on submit).
+  // Selected value for each role. Tri-state: "" = no change (field omitted),
+  // REMOVE_CURRENT = clear the assignment (field sent as null), any other
+  // value = teacher UUID (assign that teacher).
   const [classTeacherId, setClassTeacherId] = useState<string>("");
   const [assClassTeacherId, setAssClassTeacherId] = useState<string>("");
 
@@ -161,16 +169,17 @@ export default function ArmAssignTeachersPanel({
     mutationFn: async () => {
       if (!selectedArm) throw new Error("No arm selected.");
 
-      // Build the body explicitly with the keys the backend expects. Only
-      // include teacher fields the user actually changed — sending an empty
-      // string would be ambiguous, and the backend treats "field absent" as
-      // "leave existing value alone".
+      // Only include teacher fields the user actually touched. The backend
+      // treats an absent field as "leave existing value alone", a UUID as the
+      // new assignment, and an explicit null as "clear the assignment".
       const body: AssignTeachersInput = {
         id: selectedArm.id,
         school_id: SCHOOL_ID,
       };
-      if (classTeacherId) body.class_teacher = classTeacherId;
-      if (assClassTeacherId) body.ass_class_teacher = assClassTeacherId;
+      if (classTeacherId === REMOVE_CURRENT) body.class_teacher = null;
+      else if (classTeacherId) body.class_teacher = classTeacherId;
+      if (assClassTeacherId === REMOVE_CURRENT) body.ass_class_teacher = null;
+      else if (assClassTeacherId) body.ass_class_teacher = assClassTeacherId;
 
       const { data, error } = await clientAuthFetch<ApiEnvelope<ClassArm>>(
         "arm/detail/fields/",
@@ -397,8 +406,9 @@ function TeacherSelect({
         className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none transition-all bg-white appearance-none cursor-pointer focus:border-violet-400 focus:ring-2 focus:ring-violet-100 disabled:opacity-50"
       >
         <option value="">
-          {loading ? "Loading teachers…" : "— No change —"}
+          {loading ? "Loading teachers…" : "— Select Options —"}
         </option>
+        <option value={REMOVE_CURRENT}>— Remove Current Teacher —</option>
         {teachers.map((teacher) => {
           const u = teacher.staff_profile.user;
           return (
