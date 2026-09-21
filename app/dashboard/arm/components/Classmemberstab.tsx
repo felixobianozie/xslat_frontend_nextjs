@@ -14,10 +14,11 @@
 //  - Sort dropdown backed by the ?ordering= whitelist on student/list/. The
 //    default is Gender (Z → A) so male students appear before female ones.
 //  - Print button, hidden below sm so the phone toolbar stays compact.
-//    Prints in A4 with portrait as the default preview, black horizontal
-//    row borders, a repeating table header on every page, and page numbers
-//    in the footer. Landscape remains available from the print dialog.
-//    See CLASS_ROSTER_PRINT_STYLE for the full print-media CSS.
+//    Prints with black horizontal row borders, a repeating table header on
+//    every page, and page numbers in the footer. Paper size and orientation
+//    stay user-controlled in the print dialog (the initial preview reflects
+//    the user's printer/system defaults — typically A4 portrait). See
+//    CLASS_ROSTER_PRINT_STYLE for the full print-media CSS.
 //  - Add Member (primary action) sits at the visual leftmost slot on mobile
 //    via `order-first` to keep the sort dropdown near the right edge, then
 //    returns to its natural rightmost slot on md+.
@@ -77,20 +78,23 @@ const ROSTER_PAGE_SIZE = 100;
 // stylesheet controls. All other visual styling for the print template lives
 // in the JSX below via ordinary Tailwind classes.
 //
-// Orientation: the `@page` size is A4 with no orientation keyword. Browsers
-// open the print preview in portrait by default (that is the browser default
-// when no orientation is specified) and leave the orientation dropdown
-// available so the user can switch to landscape when they need to.
-// Specifying `size: A4 portrait` here would LOCK the dropdown — omitting the
-// keyword is the deliberate choice that keeps the override path open.
+// Why `size: auto` (not `size: A4`):
+// Chrome and Edge hide the Layout and Paper size dropdowns in the print
+// dialog whenever `@page` contains ANY explicit `size:` descriptor — even
+// just `size: A4` without an orientation keyword. Only `size: auto` (which
+// asks the user agent to pick size and orientation from the target sheet)
+// leaves both dropdowns available. The initial preview therefore reflects
+// the user's printer/system defaults — typically A4 portrait on A4-region
+// printers, Letter portrait in the US — and the user can freely switch
+// orientation or paper size from the dialog.
 //
-// Density target (portrait): at 9pt body font with ~2.5pt vertical row
-// padding, a portrait A4 page (297mm × 210mm) with the margins set below
-// leaves enough vertical room for 40+ student rows once the arm-label banner
-// and the repeating table header are accounted for. In landscape (user
-// override) the per-page count naturally drops to roughly 20–25 rows because
-// the page is shorter; layout, borders, header repetition, and page numbers
-// all continue to work.
+// Density target (A4 portrait): at 9pt body font with ~2.5pt vertical row
+// padding, an A4 portrait page (297mm × 210mm) with the margins below leaves
+// enough vertical room for 40+ student rows once the arm-label banner and
+// the repeating table header are accounted for. Letter portrait (~6%
+// shorter) yields roughly 38 rows/page. Landscape (user override) drops to
+// roughly 20–25 rows/page because the page is shorter. Layout, borders,
+// header repetition, and page numbers all continue to work in every mode.
 //
 // Monochrome-friendly: only black horizontal borders — no vertical rules, no
 // coloured backgrounds, no zebra striping — so nothing relies on colour
@@ -102,7 +106,7 @@ const ROSTER_PAGE_SIZE = 100;
 // content still prints correctly, only the footer numeric is absent there.
 const CLASS_ROSTER_PRINT_STYLE = `
   @page {
-    size: A4;
+    size: auto;
     margin: 10mm 12mm 14mm 12mm;
 
     @bottom-right {
@@ -119,21 +123,6 @@ const CLASS_ROSTER_PRINT_STYLE = `
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     }
 
-    .class-roster-print .print-heading {
-      margin: 0 0 6pt 0;
-      padding: 0 0 4pt 0;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
-    }
-    .class-roster-print .print-heading .arm-label {
-      font-size: 16pt;
-      margin-right: 6pt;
-    }
-    .class-roster-print .print-heading .rest {
-      font-size: 10pt;
-    }
-
     .class-roster-print table {
       width: 100%;
       border-collapse: collapse;
@@ -141,18 +130,44 @@ const CLASS_ROSTER_PRINT_STYLE = `
       color: #000;
     }
 
-    /* display: table-header-group makes the browser repeat the <thead> on
-       every printed page automatically — the "repeat table heading on
-       subsequent pages" requirement is enforced right here. */
+    /* display: table-header-group makes the browser repeat the ENTIRE
+       <thead> on every printed page automatically. Both rows inside it
+       — the banner (arm label + school name) and the column-header row
+       (S/N, Name, Student ID, Gender) — appear at the top of every page. */
     .class-roster-print thead {
       display: table-header-group;
     }
-    .class-roster-print thead tr {
-      border-top: 1.5pt solid #000;
+
+    /* Banner row — sits at the top of every printed page, spans all columns.
+       Renders as: <ARM LABEL>  CLASS ROSTER OF <SCHOOL NAME>
+       The arm label is set in a much larger font so the class is the first
+       thing the eye lands on. */
+    .class-roster-print thead .print-banner-row th {
+      padding: 0 0 5pt 0;
+      text-align: left;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      background: transparent;
+      border-top: none;
+      border-bottom: 0.75pt solid #000;
+    }
+    .class-roster-print thead .print-banner-row .arm-label {
+      font-size: 16pt;
+      margin-right: 6pt;
+    }
+    .class-roster-print thead .print-banner-row .rest {
+      font-size: 10pt;
+      vertical-align: middle;
+    }
+
+    /* Column-header row — repeats immediately below the banner on every page. */
+    .class-roster-print thead .print-columns-row {
+      border-top: none;
       border-bottom: 1.5pt solid #000;
     }
-    .class-roster-print thead th {
-      padding: 3pt 6pt;
+    .class-roster-print thead .print-columns-row th {
+      padding: 4pt 6pt 3pt 6pt;
       text-align: left;
       font-weight: 700;
       background: transparent;
@@ -359,9 +374,9 @@ export default function ClassMembersTab() {
   // Print — documentTitle is the print-preview name and the default filename
   // when saving to PDF. Function form keeps it current with the latest `arm`
   // (school name is read off the arm chain so no extra request is needed).
-  // pageStyle injects the paged-media CSS (A4 sizing with portrait as the
-  // default preview, black horizontal borders, repeating table header, page
-  // numbers). Landscape stays selectable from the print dialog.
+  // pageStyle injects the paged-media CSS (black horizontal borders,
+  // repeating table header, page numbers). Paper size and orientation stay
+  // user-controlled in the print dialog.
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: () => buildPrintTitle(arm),
@@ -866,27 +881,35 @@ export default function ClassMembersTab() {
       {/* Hidden print template — replicates the on-screen column structure
           (S/N, Name, Student ID, Gender) minus the row action menu.
           Layout is controlled entirely by CLASS_ROSTER_PRINT_STYLE (see the
-          module-level constant). That stylesheet sets A4 with portrait as
-          the default preview (landscape still selectable in the print
-          dialog), a repeating table header, black horizontal row borders,
-          and a row density that fits at least 40 students per page in
-          portrait. This markup only carries the semantic scope hooks
-          (class-roster-print, print-heading, arm-label, rest) the
-          stylesheet targets. */}
+          module-level constant). That stylesheet leaves paper size and
+          orientation under user control in the print dialog, sets a
+          repeating table header (both the arm/school banner AND the column
+          names repeat via display: table-header-group), black horizontal row
+          borders, and a row density that fits at least 40 students per page
+          on A4 portrait. This markup only carries the semantic scope hooks
+          (class-roster-print, print-banner-row, print-columns-row,
+          arm-label, rest) the stylesheet targets. */}
       <div className="h-0 overflow-hidden">
         <div ref={printRef} className="class-roster-print">
-          {(() => {
-            const { armLabel, rest } = buildPrintHeader(arm);
-            return (
-              <h1 className="print-heading">
-                {armLabel && <span className="arm-label">{armLabel}</span>}
-                <span className="rest">{rest}</span>
-              </h1>
-            );
-          })()}
           <table>
             <thead>
-              <tr>
+              {/* Banner row — spans all four columns, sits inside <thead> so
+                  the browser repeats it on every printed page alongside the
+                  column-header row below. */}
+              {(() => {
+                const { armLabel, rest } = buildPrintHeader(arm);
+                return (
+                  <tr className="print-banner-row">
+                    <th colSpan={4}>
+                      {armLabel && (
+                        <span className="arm-label">{armLabel}</span>
+                      )}
+                      <span className="rest">{rest}</span>
+                    </th>
+                  </tr>
+                );
+              })()}
+              <tr className="print-columns-row">
                 <th>S/N</th>
                 <th>Name</th>
                 <th>Student ID</th>

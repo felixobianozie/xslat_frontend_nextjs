@@ -4,15 +4,15 @@
 // Analyticsstatsbar.tsx
 //
 // Top-level stat grid for the /dashboard/analytics page.
-// Cards: Total Students · Total Staff · Total Class Arms · Total Subjects
+// Cards: Current Students · Historic Students · Total Staff · Total Class
+//        Arms · Total Subjects
 //
 // Data layer:
-//  - Five independent useQuery hooks — one per card, plus one for the
-//    school detail (needed to resolve the current term id used by
-//    arm/list/ and subject/list/).
-//  - Each card resolves on its own timeline rather than waiting for the
-//    slowest fetch, so students/staff appear immediately while the
-//    school → arms / subjects chain finishes.
+//  - Four independent useQuery hooks — one per data source (student, staff,
+//    arm, subject). The student query backs two cards (Current + Historic),
+//    since both numbers come from the same student/analytics/ response.
+//    Each query fires immediately and resolves on its own timeline; no card
+//    waits on another.
 //  - All requests go through clientAuthFetch via the useClientAuthFetch
 //    hook (project's standard client-side auth wrapper).
 //  - Fetch errors are surfaced as toasts. React Query v5 removed onError,
@@ -20,20 +20,39 @@
 //    on each new failure.
 //
 // Backend endpoints:
-//   GET school/detail/?id=<school>           → school.current_term.id
-//   GET student/analytics/?school-id=<id>    → { data.total, … }
-//   GET staff/analytics/?school-id=<id>      → { data.total, … }
-//   GET arm/list/?school-id=…&term-id=…      → { data: Arm[] }      (unpaginated)
-//   GET subject/list/?school-id=…&term-id=…  → { data: Subject[] }  (unpaginated)
+//   GET student/analytics/?school-id=<id>   → { data.current_total, data.historic_total, … }
+//   GET staff/analytics/?school-id=<id>     → { data.total, … }
+//   GET arm/analytics/?school-id=<id>       → { data.total, data.has_current_term, … }
+//   GET subject/analytics/?school-id=<id>   → { data.total, data.has_current_term, … }
 //
-// Note on counts for arms/subjects:
-//   Neither endpoint has a dedicated count endpoint, so the card value
-//   is derived from the length of the returned array.
+// Students cards:
+//   The backend tracks both current_total (enrolled right now) and
+//   historic_total (every student ever enrolled, including those since
+//   withdrawn/graduated/transferred out). Each gets its own card rather
+//   than being combined into one, matching how every other metric on this
+//   grid gets its own card. Further breakdown fields (enrolled, unenrolled,
+//   graduated, withdrawn, expelled, transferred_out, male, female, others,
+//   boarding, day) are already typed below for when a richer view is
+//   needed.
+//
+// Arms/subjects and the current term:
+//   arm/analytics/ and subject/analytics/ both resolve the school's current
+//   term SERVER-SIDE (School.get_current_term()) — no term id is supplied
+//   by this component, and no separate school/detail/ fetch is needed to
+//   discover one. `has_current_term` in each response distinguishes "the
+//   school has no current term" (every count is 0, shown as "—") from "the
+//   current term genuinely has zero arms/subjects" (shown as "0").
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { GraduationCap, Users, LayoutGrid, BookOpen } from "lucide-react";
+import {
+  GraduationCap,
+  History,
+  Users,
+  LayoutGrid,
+  BookOpen,
+} from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
@@ -52,19 +71,19 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
-// Minimal shape from GET school/detail/. We only need current_term.id to
-// pass to arm/list/ and subject/list/, so the rest of the school payload
-// is intentionally ignored here.
-interface SchoolDetail {
-  current_term: { id: string } | null;
-}
-
-// Shape from GET student/analytics/. Only `total` is rendered on this page,
-// but the full shape is typed so the response is self-documenting.
+// Shape from GET student/analytics/. Only `historic_total` and
+// `current_total` are rendered on this page for now; the rest of the
+// breakdown is typed so the response is self-documenting and available to
+// future cards.
 interface StudentAnalytics {
-  total: number;
-  active: number;
-  inactive: number;
+  historic_total: number;
+  current_total: number;
+  enrolled: number;
+  unenrolled: number;
+  graduated: number;
+  withdrawn: number;
+  expelled: number;
+  transferred_out: number;
   male: number;
   female: number;
   others: number;
@@ -78,13 +97,26 @@ interface StaffAnalytics {
   total: number;
 }
 
-// arm/list/ and subject/list/ return full nested records; we only need the
-// length of the array, so the inner shape is reduced to `id` here.
-interface ArmRecord {
-  id: string;
+// Shape from GET arm/analytics/. Only `total` and `has_current_term` are
+// consumed on this page; the broadsheet/class-teacher breakdowns are typed
+// for self-documentation and available to future cards on this page.
+interface ArmAnalytics {
+  has_current_term: boolean;
+  total: number;
+  broadsheet_none: number;
+  broadsheet_pending: number;
+  broadsheet_revoked: number;
+  broadsheet_approved: number;
+  without_class_teacher: number;
 }
-interface SubjectRecord {
-  id: string;
+
+// Shape from GET subject/analytics/. Only `total` and `has_current_term`
+// are consumed on this page.
+interface SubjectAnalytics {
+  has_current_term: boolean;
+  total: number;
+  offered_in_arms: number;
+  not_yet_offered: number;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -92,26 +124,7 @@ interface SubjectRecord {
 export default function AnalyticsStatsBar() {
   const { clientAuthFetch } = useClientAuthFetch();
 
-  // ── 1. School detail (resolves the current term id) ──────────────────────
-  // arm/list/ and subject/list/ BOTH require term-id, which lives on
-  // school.current_term. The cache key matches the convention used in
-  // Studentassignarmpanel so the same response can be shared across pages.
-  const schoolQuery = useQuery<ApiEnvelope<SchoolDetail>>({
-    queryKey: ["school", SCHOOL_ID],
-    queryFn: async () => {
-      const { data, error } = await clientAuthFetch<ApiEnvelope<SchoolDetail>>(
-        `school/detail/?id=${SCHOOL_ID}`,
-      );
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-  });
-
-  const currentTermId = schoolQuery.data?.data.current_term?.id ?? null;
-
-  // ── 2. Student analytics ─────────────────────────────────────────────────
-  // One round-trip to the dedicated aggregate endpoint — much cheaper than
-  // fetching the full student list and counting client-side.
+  // ── 1. Student analytics ─────────────────────────────────────────────────
   const studentQuery = useQuery<ApiEnvelope<StudentAnalytics>>({
     queryKey: ["analytics-students", SCHOOL_ID],
     queryFn: async () => {
@@ -123,7 +136,7 @@ export default function AnalyticsStatsBar() {
     },
   });
 
-  // ── 3. Staff analytics ───────────────────────────────────────────────────
+  // ── 2. Staff analytics ───────────────────────────────────────────────────
   const staffQuery = useQuery<ApiEnvelope<StaffAnalytics>>({
     queryKey: ["analytics-staff", SCHOOL_ID],
     queryFn: async () => {
@@ -135,54 +148,37 @@ export default function AnalyticsStatsBar() {
     },
   });
 
-  // ── 4. Class arms count (derived from arm/list/ length) ──────────────────
-  // Gated on currentTermId — the backend rejects arm/list/ without a
-  // term-id. Once the school query resolves with a term, this fires.
-  const armsQuery = useQuery<ApiEnvelope<ArmRecord[]>>({
-    queryKey: ["analytics-arms", SCHOOL_ID, currentTermId],
+  // ── 3. Class arms analytics ───────────────────────────────────────────────
+  // The backend resolves the school's current term internally — this card
+  // no longer depends on a prior school/detail/ fetch to discover a term id.
+  const armsQuery = useQuery<ApiEnvelope<ArmAnalytics>>({
+    queryKey: ["analytics-arms", SCHOOL_ID],
     queryFn: async () => {
-      const { data, error } = await clientAuthFetch<ApiEnvelope<ArmRecord[]>>(
-        `arm/list/?school-id=${SCHOOL_ID}&term-id=${currentTermId}`,
+      const { data, error } = await clientAuthFetch<ApiEnvelope<ArmAnalytics>>(
+        `arm/analytics/?school-id=${SCHOOL_ID}`,
       );
       if (error) throw new Error(error.message);
       return data!;
     },
-    enabled: !!currentTermId,
   });
 
-  // ── 5. Subjects count (derived from subject/list/ length) ────────────────
-  // Same gating + count pattern as arms.
-  const subjectsQuery = useQuery<ApiEnvelope<SubjectRecord[]>>({
-    queryKey: ["analytics-subjects", SCHOOL_ID, currentTermId],
+  // ── 4. Subjects analytics ─────────────────────────────────────────────────
+  // Same independence as arms — no term id supplied, no school/detail/
+  // dependency.
+  const subjectsQuery = useQuery<ApiEnvelope<SubjectAnalytics>>({
+    queryKey: ["analytics-subjects", SCHOOL_ID],
     queryFn: async () => {
       const { data, error } = await clientAuthFetch<
-        ApiEnvelope<SubjectRecord[]>
-      >(`subject/list/?school-id=${SCHOOL_ID}&term-id=${currentTermId}`);
+        ApiEnvelope<SubjectAnalytics>
+      >(`subject/analytics/?school-id=${SCHOOL_ID}`);
       if (error) throw new Error(error.message);
       return data!;
     },
-    enabled: !!currentTermId,
   });
 
   // ── Error toasts ─────────────────────────────────────────────────────────
   // One useEffect per query — each re-runs when that query's error changes,
   // so the user gets a fresh toast on every distinct failure.
-  useEffect(() => {
-    if (schoolQuery.isError) {
-      toast.error("Could not load school information.");
-    }
-  }, [schoolQuery.isError]);
-
-  useEffect(() => {
-    // Special case: school loaded successfully but has no active term.
-    // arm/list/ and subject/list/ cannot run, so those cards will show "—".
-    if (schoolQuery.data && !currentTermId) {
-      toast.warning(
-        "This school has no active term — class arms and subjects unavailable.",
-      );
-    }
-  }, [schoolQuery.data, currentTermId]);
-
   useEffect(() => {
     if (studentQuery.isError) {
       toast.error(
@@ -208,7 +204,7 @@ export default function AnalyticsStatsBar() {
       toast.error(
         armsQuery.error instanceof Error
           ? armsQuery.error.message
-          : "Failed to load class arms.",
+          : "Failed to load class arm analytics.",
       );
     }
   }, [armsQuery.isError, armsQuery.error]);
@@ -218,44 +214,66 @@ export default function AnalyticsStatsBar() {
       toast.error(
         subjectsQuery.error instanceof Error
           ? subjectsQuery.error.message
-          : "Failed to load subjects.",
+          : "Failed to load subject analytics.",
       );
     }
   }, [subjectsQuery.isError, subjectsQuery.error]);
 
+  // Arms and subjects share the same "no current term" condition (both
+  // endpoints resolve the same school's current term independently), so one
+  // warning — gated on the arms response — covers both cards rather than
+  // firing twice for the same underlying cause.
+  useEffect(() => {
+    if (armsQuery.data && armsQuery.data.data.has_current_term === false) {
+      toast.warning(
+        "This school has no active term — class arms and subjects unavailable.",
+      );
+    }
+  }, [armsQuery.data]);
+
   // ── Derived per-card values ──────────────────────────────────────────────
   // Numbers are formatted with thousand separators (matches the original
-  // mock's "1,248" presentation). "—" is shown when data is unavailable
-  // (error, or no active term for arms/subjects).
-  //
-  // isLoading (not isPending) is used so that a query disabled by `enabled:
-  // false` is NOT treated as loading — that case correctly falls through to
-  // the "—" placeholder.
+  // mock's "1,248" presentation). "—" is shown on error or when the school
+  // has no current term (has_current_term === false) — a genuine zero count
+  // under an active term is shown as "0", not "—".
+  // Both cards read from the same studentQuery response — current_total and
+  // historic_total are two fields on one payload, not two separate fetches.
   const studentsLoading = studentQuery.isLoading;
-  const studentsValue =
-    studentQuery.data?.data.total?.toLocaleString() ?? "—";
+  const currentStudentsValue =
+    studentQuery.data?.data.current_total?.toLocaleString() ?? "—";
+  const historicStudentsValue =
+    studentQuery.data?.data.historic_total?.toLocaleString() ?? "—";
 
   const staffLoading = staffQuery.isLoading;
   const staffValue = staffQuery.data?.data.total?.toLocaleString() ?? "—";
 
-  // Arms/subjects depend on the school query resolving first. While school
-  // is loading, the chain is loading. Once the school has the term id and
-  // the gated query fires, isLoading flips to true on that query.
-  const armsLoading = schoolQuery.isLoading || armsQuery.isLoading;
-  const armsValue = armsQuery.data?.data.length?.toLocaleString() ?? "—";
+  const armsLoading = armsQuery.isLoading;
+  const armsValue =
+    armsQuery.data?.data.has_current_term === false
+      ? "—"
+      : (armsQuery.data?.data.total?.toLocaleString() ?? "—");
 
-  const subjectsLoading = schoolQuery.isLoading || subjectsQuery.isLoading;
+  const subjectsLoading = subjectsQuery.isLoading;
   const subjectsValue =
-    subjectsQuery.data?.data.length?.toLocaleString() ?? "—";
+    subjectsQuery.data?.data.has_current_term === false
+      ? "—"
+      : (subjectsQuery.data?.data.total?.toLocaleString() ?? "—");
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       <AnalyticsCard
-        label="Total Students"
-        value={studentsValue}
+        label="Current Students"
+        value={currentStudentsValue}
         loading={studentsLoading}
         icon={<GraduationCap size={20} />}
         color="violet"
+      />
+      <AnalyticsCard
+        label="Historic Students"
+        value={historicStudentsValue}
+        loading={studentsLoading}
+        icon={<History size={20} />}
+        color="slate"
       />
       <AnalyticsCard
         label="Total Staff"
@@ -298,7 +316,7 @@ function AnalyticsCard({
   value: string;
   loading: boolean;
   icon: React.ReactNode;
-  color: "violet" | "blue" | "emerald" | "amber";
+  color: "violet" | "blue" | "emerald" | "amber" | "slate";
 }) {
   if (loading) {
     return <StatCardLoader count={1} cols="grid-cols-1" />;

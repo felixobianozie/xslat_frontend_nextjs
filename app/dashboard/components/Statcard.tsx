@@ -4,7 +4,7 @@ interface StatCardProps {
   sub?: string;
   icon: React.ReactNode;
   trend?: { value: string; positive: boolean };
-  color: "violet" | "blue" | "emerald" | "amber";
+  color: "violet" | "blue" | "emerald" | "amber" | "slate";
 }
 
 const colorMap = {
@@ -31,6 +31,12 @@ const colorMap = {
     icon: "text-amber-600",
     trend: "text-amber-600",
     bar: "bg-amber-500",
+  },
+  slate: {
+    bg: "bg-slate-100",
+    icon: "text-slate-600",
+    trend: "text-slate-600",
+    bar: "bg-slate-500",
   },
 };
 
