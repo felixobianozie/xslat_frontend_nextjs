@@ -55,7 +55,7 @@ const bottomNavItems: NavItem[] = [
   { label: "Community", href: "/coming-soon", icon: Globe },
   {
     label: "Configurations",
-    href: "/coming-soon",
+    href: "/dashboard/configurations",
     icon: Settings,
   },
   {
@@ -87,7 +87,7 @@ export default function Leftbar() {
       <Link
         href={item.href}
         onClick={close}
-        className={`flex items-center gap-3 px-4 py-2.5 rounded-r-xl text-sm font-medium transition-all duration-200 group bg-indigo-50
+        className={`flex items-center gap-3 px-4 py-2.5 rounded-r-full text-sm font-medium transition-all duration-200 group bg-indigo-50
           ${
             isActive
               ? "bg-violet-500 text-white shadow-md shadow-violet-200"

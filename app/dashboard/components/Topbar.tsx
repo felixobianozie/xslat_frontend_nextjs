@@ -8,8 +8,7 @@
 //
 // Wiring notes:
 //  * The current term label is fetched from school/detail/ and rendered as
-//    "<term name> - <session name>" — matching the previous hardcoded
-//    placeholder format. Cache key ["school", SCHOOL_ID] matches the key
+//    "<term name> - <session name>". Cache key ["school", SCHOOL_ID] matches the key
 //    used by other components (e.g. Studentassignarmpanel), so this is a
 //    cache hit after the first request.
 //  * The bell and profile buttons still have no backend, so they surface
@@ -71,7 +70,7 @@ export default function Topbar({
   // Resolve the term label.
   //  * While loading: "Loading…"
   //  * Loaded with a current term:  "<term name> - <session name>"
-  //    (matches the previous placeholder "Second Term - 2023/2024" format).
+  //    (for example "Second Term - 2023/2024").
   //  * Loaded but no current term:  "No active term"
   const currentTerm = schoolData?.data.current_term ?? null;
   const termLabel = schoolLoading

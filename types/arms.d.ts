@@ -12,11 +12,10 @@
 // Source of truth: academics/views.py & academics/serializers.py.
 //
 // Note on the list response shape:
-//   ArmListView's `include_arm_fields` is currently ("id", "name", "abbr",
-//   "level") — so class_teacher / ass_class_teacher are NOT in the list payload
-//   as of today. The list table here still surfaces those columns (matching the
-//   /arms draft), so on integration either include them in the backend's
-//   include_arm_fields OR add a secondary fetch. The fields are typed as
+//   ArmListView returns id, name, abbr, level, class_teacher, ass_class_teacher,
+//   display_order and broadsheet. It does not return score_entry_starts,
+//   score_entry_ends or the arm's configured settings (formats, pass rule,
+//   result template); those come from arm/detail/. The fields are typed as
 //   optional below to keep the type honest about what actually arrives.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -45,8 +44,8 @@ interface ArmTerm {
   session: ArmSession;
   // Mirrors Term.RESULT_STATUS on the backend model. Optional here because
   // whether it surfaces on the wire depends on the caller's
-  // include_term_fields context. As of writing, ArmDetailView's context
-  // does NOT include "results_status" — components that want to render
+  // include_term_fields context. ArmDetailView's context does not
+  // include "results_status", so components that want to render
   // the term's publish state should treat a missing value as "unpublished"
   // (i.e. anything other than "published" is treated as not-yet-published).
   results_status?: "nota" | "computing" | "published";
@@ -80,8 +79,8 @@ interface ArmLevel {
 //   include_staffportfolio_fields: ("id", "staff_profile")
 //   include_staffprofile_fields:   ("id", "user")
 //   include_customuser_fields:     ("id", "first_name", "last_name")
-// public_id is added here because list/print/UI surfaces it; on integration
-// remember to add "public_id" to the include_customuser_fields tuple.
+// public_id is optional: arm/detail/ returns it, while arm/list/ and the arm
+// update endpoints do not.
 
 interface ArmTeacherUser {
   id: string;

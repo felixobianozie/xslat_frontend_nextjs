@@ -4,8 +4,8 @@
 // StudentRemoveFromArmDialog.tsx
 //
 // Confirmation modal shown before removing a student from their current class
-// arm. Replaces the draft's native <dialog> + DaisyUI modal with a fully
-// Tailwind-styled overlay so we stay within the project's styling constraints.
+// arm. A Tailwind-styled overlay, in line with the project's styling
+// constraints.
 //
 // Backend reference (PUT arm/detail/roster/):
 //   Body: { id: <arm_uuid>, school_id, remove_student: [<student_uuid>] }
