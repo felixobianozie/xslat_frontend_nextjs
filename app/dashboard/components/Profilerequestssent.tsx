@@ -17,7 +17,9 @@
 //
 // Row actions (via the action menu component):
 //   * Resend Request — only valid when status === "declined"; performs
-//                      PUT staff/requests/detail/ { request_id, status: "pending" }.
+//                      PUT staff/requests/resend/ { request_id }. Only the
+//                      person who made the request can resend it, and a
+//                      blacklisted request cannot be resent.
 //   * Delete Request — no DELETE endpoint exists on the backend; the action
 //                      just shows the "feature in the works" toast.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -148,9 +150,9 @@ export default function ProfileRequestsSent() {
   // ── Resend mutation (declined → pending) ─────────────────────────────────
   const { mutate: resend } = useMutation({
     mutationFn: async (requestId: string) => {
-      const { data, error } = await clientAuthFetch("staff/requests/detail/", {
+      const { data, error } = await clientAuthFetch("staff/requests/resend/", {
         method: "PUT",
-        body: { request_id: requestId, status: "pending" },
+        body: { request_id: requestId },
       });
       if (error) throw new Error(error.message);
       return data;

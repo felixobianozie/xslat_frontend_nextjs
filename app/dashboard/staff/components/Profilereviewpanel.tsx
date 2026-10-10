@@ -3,22 +3,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ProfileReviewPanel.tsx
 //
-// Slide-in panel displaying the details of a pending profile request.
-// The admin can approve or decline directly from this panel.
+// Slide-in panel displaying the details of a profile request.
+// The approver acts on the request directly from the header buttons:
+//   Pending request     — Approve, Decline, or Blacklist
+//   Declined request    — no buttons; only the requester can resend it
+//   Blacklisted request — Lift and Decline, or Lift and Approve
+// Each button hands the chosen action to the parent, which asks for
+// confirmation.
 //
-// The text "Pending profile request" previously shown under the applicant's
-// name has been replaced with the applicant's gender (as instructed).
+// The applicant's gender is shown under their name.
 //
 // Data shape from StaffProfReqSerializer (list view):
-//   user: { id, first_name, last_name, gender }
+//   user: { id, first_name, last_name, middle_name, gender, email, phone }
 //   school: { id, name }
 //   status, refresh_count, created_on
-//
-// In the API phase we'll fetch the full user detail to populate the
-// remaining fields (email, phone, middle name).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ChevronLeft, User } from "lucide-react";
+import type { ReviewAction } from "./Profilerequests";
 
 // Human-readable gender labels — mirrors CustomUser GENDER choices on the backend
 const GENDER_LABELS: Record<string, string> = {
@@ -32,16 +34,15 @@ interface ProfileReviewPanelProps {
   show: boolean;
   request: StaffProfReq | null;
   onClose: () => void;
-  onApprove: () => void;
-  onDecline: () => void;
+  /** Called with the action the approver chose. */
+  onAction: (action: ReviewAction) => void;
 }
 
 export default function ProfileReviewPanel({
   show,
   request,
   onClose,
-  onApprove,
-  onDecline,
+  onAction,
 }: ProfileReviewPanelProps) {
   // Resolved gender label — falls back to "—" when gender is absent or unrecognised
   const genderLabel = request?.user.gender
@@ -71,19 +72,45 @@ export default function ProfileReviewPanel({
             <h2 className="text-sm font-bold text-slate-800">
               Review Requester
             </h2>
-            <div className="flex gap-2">
-              <button
-                onClick={onApprove}
-                className="px-3 py-1.5 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-all shadow-sm"
-              >
-                Approve
-              </button>
-              <button
-                onClick={onDecline}
-                className="cursor-pointer px-3 py-1.5 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-100 transition-all"
-              >
-                Decline
-              </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              {request?.status === "blacklisted" && (
+                <>
+                  <button
+                    onClick={() => onAction("lift-approve")}
+                    className="cursor-pointer px-3 py-1.5 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-all shadow-sm"
+                  >
+                    Lift and Approve
+                  </button>
+                  <button
+                    onClick={() => onAction("lift-decline")}
+                    className="cursor-pointer px-3 py-1.5 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-100 transition-all"
+                  >
+                    Lift and Decline
+                  </button>
+                </>
+              )}
+              {request?.status === "pending" && (
+                <>
+                  <button
+                    onClick={() => onAction("approve")}
+                    className="cursor-pointer px-3 py-1.5 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-all shadow-sm"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => onAction("decline")}
+                    className="cursor-pointer px-3 py-1.5 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-100 transition-all"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    onClick={() => onAction("blacklist")}
+                    className="cursor-pointer px-3 py-1.5 text-xs border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-100 transition-all"
+                  >
+                    Blacklist
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -98,10 +125,6 @@ export default function ProfileReviewPanel({
                 {request?.user.first_name} {request?.user.last_name}
               </p>
 
-              {/*
-                Gender is shown here instead of the previous "Pending profile
-                request" label, per product requirement.
-              */}
               <p className="text-xs text-slate-500 mt-0.5 font-medium">
                 {genderLabel}
               </p>
@@ -124,6 +147,15 @@ export default function ProfileReviewPanel({
             <DetailField label="Phone Number" value={request?.user.phone} />
             <DetailField label="School" value={request?.school.name} />
           </div>
+
+          {/* Declined notice */}
+          {request?.status === "declined" && (
+            <div className="px-5 pb-5">
+              <p className="text-[10px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                This request was declined. Only the requester can resend it.
+              </p>
+            </div>
+          )}
 
           {/* Resend notice */}
           {request && request.refresh_count > 0 && (

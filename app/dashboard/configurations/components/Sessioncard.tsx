@@ -16,8 +16,10 @@
 //   Closed    — has been current and was then closed; it can never be current again
 //   Upcoming  — has never been current, so it can still be set as current
 //
-// The buttons only offer what the state allows. The backend still checks every
-// request and explains any refusal.
+// The buttons only offer what the state allows. A closed session, a closed term
+// and any term inside a closed session are read-only, so they show no action
+// buttons. A term can only be set as current while its session is current. The
+// backend still checks every request and explains any refusal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -74,6 +76,11 @@ function StatePill({
       {label}
     </span>
   );
+}
+
+// Closed means the period has been current and is not any more.
+function isClosed(period: { current: boolean; initialized: boolean }): boolean {
+  return period.initialized && !period.current;
 }
 
 function dateRange(starts: string, ends: string | null): string {
@@ -136,6 +143,7 @@ export default function SessionCard({
   });
 
   const canSetCurrent = !session.current && !session.initialized;
+  const sessionClosed = isClosed(session);
 
   return (
     <article className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
@@ -172,54 +180,56 @@ export default function SessionCard({
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onEditSession(session)}
-            className={ACTION_BUTTON}
-          >
-            <Pencil size={11} /> Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => onAddTerm(session)}
-            className={ACTION_BUTTON}
-          >
-            <PlusCircle size={11} /> Add term
-          </button>
-          {canSetCurrent && (
+        {!sessionClosed && (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() =>
-                onChangeStatus({
-                  kind: "session",
-                  id: session.id,
-                  name: session.name,
-                  action: "activate",
-                })
-              }
+              onClick={() => onEditSession(session)}
               className={ACTION_BUTTON}
             >
-              Set as current
+              <Pencil size={11} /> Edit
             </button>
-          )}
-          {session.current && (
             <button
               type="button"
-              onClick={() =>
-                onChangeStatus({
-                  kind: "session",
-                  id: session.id,
-                  name: session.name,
-                  action: "close",
-                })
-              }
+              onClick={() => onAddTerm(session)}
               className={ACTION_BUTTON}
             >
-              Close session
+              <PlusCircle size={11} /> Add term
             </button>
-          )}
-        </div>
+            {canSetCurrent && (
+              <button
+                type="button"
+                onClick={() =>
+                  onChangeStatus({
+                    kind: "session",
+                    id: session.id,
+                    name: session.name,
+                    action: "activate",
+                  })
+                }
+                className={ACTION_BUTTON}
+              >
+                Set as current
+              </button>
+            )}
+            {session.current && (
+              <button
+                type="button"
+                onClick={() =>
+                  onChangeStatus({
+                    kind: "session",
+                    id: session.id,
+                    name: session.name,
+                    action: "close",
+                  })
+                }
+                className={ACTION_BUTTON}
+              >
+                Close session
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Terms */}
@@ -231,81 +241,91 @@ export default function SessionCard({
             <ErrorNotice message={error.message} onRetry={() => refetch()} />
           ) : !terms || terms.length === 0 ? (
             <p className="text-xs text-slate-400">
-              No terms yet. Use &quot;Add term&quot; to create the first one.
+              {sessionClosed
+                ? "No terms were recorded for this session."
+                : 'No terms yet. Use "Add term" to create the first one.'}
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
-              {terms.map((term) => (
-                <li
-                  key={term.id}
-                  className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2.5"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-xs font-semibold text-slate-800">
-                        {term.name}
-                        {term.abbr && (
-                          <span className="ml-1.5 font-normal text-slate-400">
-                            ({term.abbr})
-                          </span>
-                        )}
-                      </h4>
-                      <StatePill
-                        current={term.current}
-                        initialized={term.initialized}
-                      />
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {dateRange(term.starts, term.ends)}
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Results: {RESULTS_STATUS_LABELS[term.results_status]}
-                    </p>
-                  </div>
+              {terms.map((term) => {
+                const termReadOnly = sessionClosed || isClosed(term);
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onEditTerm(term, session)}
-                      className={ACTION_BUTTON}
-                    >
-                      <Pencil size={11} /> Edit
-                    </button>
-                    {!term.current && !term.initialized && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onChangeStatus({
-                            kind: "term",
-                            id: term.id,
-                            name: `${term.name} (${session.name})`,
-                            action: "activate",
-                          })
-                        }
-                        className={ACTION_BUTTON}
-                      >
-                        Set as current
-                      </button>
+                return (
+                  <li
+                    key={term.id}
+                    className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-semibold text-slate-800">
+                          {term.name}
+                          {term.abbr && (
+                            <span className="ml-1.5 font-normal text-slate-400">
+                              ({term.abbr})
+                            </span>
+                          )}
+                        </h4>
+                        <StatePill
+                          current={term.current}
+                          initialized={term.initialized}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {dateRange(term.starts, term.ends)}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Results: {RESULTS_STATUS_LABELS[term.results_status]}
+                      </p>
+                    </div>
+
+                    {!termReadOnly && (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onEditTerm(term, session)}
+                          className={ACTION_BUTTON}
+                        >
+                          <Pencil size={11} /> Edit
+                        </button>
+                        {session.current &&
+                          !term.current &&
+                          !term.initialized && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeStatus({
+                                  kind: "term",
+                                  id: term.id,
+                                  name: `${term.name} (${session.name})`,
+                                  action: "activate",
+                                })
+                              }
+                              className={ACTION_BUTTON}
+                            >
+                              Set as current
+                            </button>
+                          )}
+                        {term.current && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onChangeStatus({
+                                kind: "term",
+                                id: term.id,
+                                name: `${term.name} (${session.name})`,
+                                action: "close",
+                              })
+                            }
+                            className={ACTION_BUTTON}
+                          >
+                            Close term
+                          </button>
+                        )}
+                      </div>
                     )}
-                    {term.current && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onChangeStatus({
-                            kind: "term",
-                            id: term.id,
-                            name: `${term.name} (${session.name})`,
-                            action: "close",
-                          })
-                        }
-                        className={ACTION_BUTTON}
-                      >
-                        Close term
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

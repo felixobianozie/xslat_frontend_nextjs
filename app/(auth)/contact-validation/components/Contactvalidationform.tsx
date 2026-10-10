@@ -6,6 +6,8 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import publicFetch from "@/lib/Publicfetch";
 import { useRouter } from "next/navigation";
+import CodeInput, { CODE_REGEX } from "../../components/Codeinput";
+import StatusNotice from "../../components/Statusnotice";
 
 // Which contact channel the user is currently verifying
 type Channel = "email" | "phone";
@@ -15,25 +17,16 @@ type Step1Values = {
   phone: string;
 };
 
-type Step2Values = {
-  token: string;
-  password: string;
-  password_repeat: string;
-};
-
 // Errors are keyed by field name across both steps; we render the relevant ones per step
 type Errors = Partial<{
   email: string;
   phone: string;
   token: string;
-  password: string;
-  password_repeat: string;
 }>;
 
 // ─── Format constants — kept consistent with Signupform ─────────────────────
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+\d{8,16}$/;
-const OTP_REGEX = /^\d{6}$/;
 
 // How long the "Resend code" button stays disabled after each send (in seconds).
 // Adjust here to change the cooldown across the whole form.
@@ -56,16 +49,8 @@ export default function ContactValidationForm() {
     phone: "",
   });
 
-  // ── Step 2: OTP, password, password confirmation ──
-  // Password is OPTIONAL (only used for accounts without one yet). The inline
-  // tip near the field explains this — see the render section.
-  const [step2Values, setStep2Values] = useState<Step2Values>({
-    token: "",
-    password: "",
-    password_repeat: "",
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showPasswordRepeat, setShowPasswordRepeat] = useState(false);
+  // ── Step 2: the 6-digit code ──
+  const [token, setToken] = useState("");
 
   const [errors, setErrors] = useState<Errors>({});
 
@@ -120,40 +105,14 @@ export default function ContactValidationForm() {
     return next;
   }
 
-  // Validates the step-2 input. Password is OPTIONAL — the backend uses it
-  // only for accounts that have no password yet. When the user does fill it
-  // in, we enforce signup-grade strength rules and require a matching
-  // confirmation, the same rules as Signupform.
+  // Validates the step-2 input: the code must be exactly six digits
   function validateStep2(): Errors {
     const next: Errors = {};
 
-    if (!step2Values.token.trim()) {
+    if (!token.trim()) {
       next.token = "OTP is required.";
-    } else if (!OTP_REGEX.test(step2Values.token.trim())) {
+    } else if (!CODE_REGEX.test(token.trim())) {
       next.token = "Enter the 6-digit code from your message.";
-    }
-
-    // Validate password only when the user typed something. An empty
-    // password is allowed — the backend will reject it if needed.
-    if (step2Values.password) {
-      if (step2Values.password.length < 8) {
-        next.password = "Must be at least 8 characters.";
-      } else if (
-        !/[A-Z]/.test(step2Values.password) ||
-        !/[a-z]/.test(step2Values.password) ||
-        !/[0-9]/.test(step2Values.password) ||
-        !/[^A-Za-z0-9]/.test(step2Values.password)
-      ) {
-        next.password =
-          "Must contain at least one uppercase letter, one lowercase letter, one number, and one special character.";
-      }
-
-      // Confirmation is required only when a password was provided
-      if (!step2Values.password_repeat) {
-        next.password_repeat = "Please confirm your password.";
-      } else if (step2Values.password !== step2Values.password_repeat) {
-        next.password_repeat = "Passwords do not match.";
-      }
     }
 
     return next;
@@ -203,7 +162,7 @@ export default function ContactValidationForm() {
     },
     onSuccess: () => {
       // Reset step-2 state and start the cooldown for the resend button
-      setStep2Values({ token: "", password: "", password_repeat: "" });
+      setToken("");
       setErrors({});
       setResendSecondsLeft(RESEND_COOLDOWN_SECONDS);
       setStep(2);
@@ -247,20 +206,15 @@ export default function ContactValidationForm() {
     },
   });
 
-  // Step 2 — submit the OTP (and password if required) to the final validate endpoint
+  // Step 2 — submit the code to the final validate endpoint.
+  // Wrong codes are counted by the backend; after too many it answers 429 with a
+  // message saying when to try again, which is shown as-is below.
   const validateMutation = useMutation({
     mutationFn: async () => {
       const payload: Record<string, any> = {
         [channel]: currentCredential(),
-        token: step2Values.token.trim(),
+        token: token.trim(),
       };
-      // Send password only when the user filled it in. The backend ignores
-      // this field for accounts that already have a password, so an empty
-      // value is harmless. Accounts that need a password but receive none
-      // will be rejected at the backend with a clear "password required" error.
-      if (step2Values.password) {
-        payload.password = step2Values.password;
-      }
 
       const resp = await withTimeout((signal) =>
         publicFetch(`${channel}/validate/`, {
@@ -287,9 +241,6 @@ export default function ContactValidationForm() {
         const fieldErrors: Errors = {};
         if (Array.isArray(err.data.token)) {
           fieldErrors.token = err.data.token.join(" ");
-        }
-        if (Array.isArray(err.data.password)) {
-          fieldErrors.password = err.data.password.join(" ");
         }
         if (Object.keys(fieldErrors).length > 0) {
           setErrors((prev) => ({ ...prev, ...fieldErrors }));
@@ -322,19 +273,12 @@ export default function ContactValidationForm() {
     }
   }
 
-  function handleStep2Change(e: ChangeEvent<HTMLInputElement>) {
-    const { name, value } = e.target;
-
-    // OTP: restrict to digits and cap at 6 characters for a smoother mobile experience
-    const cleaned =
-      name === "token" ? value.replace(/\D/g, "").slice(0, 6) : value;
-
-    setStep2Values((prev) => ({ ...prev, [name]: cleaned }));
-
-    if (errors[name as keyof Errors]) {
+  function handleTokenChange(value: string) {
+    setToken(value);
+    if (errors.token) {
       setErrors((prev) => {
         const next = { ...prev };
-        delete next[name as keyof Errors];
+        delete next.token;
         return next;
       });
     }
@@ -364,7 +308,7 @@ export default function ContactValidationForm() {
   // Step-1 values are kept (good UX); step-2 inputs, notice, and timer are reset.
   function handleBackToStep1() {
     setStep(1);
-    setStep2Values({ token: "", password: "", password_repeat: "" });
+    setToken("");
     setErrors({});
     setResendSecondsLeft(0);
     setNotice(null);
@@ -410,111 +354,6 @@ export default function ContactValidationForm() {
           strokeLinecap="round"
         />
       </svg>
-    );
-  }
-
-  // Eye toggle for the password field — visually identical to Signupform's
-  function EyeToggle({
-    show,
-    onToggle,
-  }: {
-    show: boolean;
-    onToggle: () => void;
-  }) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-label={show ? "Hide password" : "Show password"}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-600 transition-colors cursor-pointer"
-      >
-        {show ? (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-            <line x1="1" y1="1" x2="23" y2="23" />
-          </svg>
-        ) : (
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        )}
-      </button>
-    );
-  }
-
-  // Inline status banner. Mirrors the toast message so the user has a
-  // persistent reference for the latest event. Hidden when `notice` is null.
-  function Notice({
-    kind,
-    message,
-  }: {
-    kind: "success" | "error";
-    message: string;
-  }) {
-    const palette =
-      kind === "success"
-        ? "bg-green-50 border-green-100 text-green-700"
-        : "bg-red-50 border-red-100 text-red-700";
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${palette}`}
-      >
-        {kind === "success" ? (
-          <svg
-            className="mt-0.5 shrink-0"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : (
-          <svg
-            className="mt-0.5 shrink-0"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-        )}
-        <span className="leading-snug">{message}</span>
-      </div>
     );
   }
 
@@ -710,125 +549,15 @@ export default function ContactValidationForm() {
         </div>
 
         {/* Inline status banner — mirrors the most recent toast notification */}
-        {notice && <Notice kind={notice.kind} message={notice.message} />}
+        {notice && <StatusNotice kind={notice.kind} message={notice.message} />}
 
-        {/* OTP input — numeric, centered, with one-time-code autofill on supporting devices */}
-        <div>
-          <label htmlFor="token" className={labelClass}>
-            6-Digit Code <span className="text-violet-500">*</span>
-          </label>
-          <input
-            id="token"
-            name="token"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            value={step2Values.token}
-            onChange={handleStep2Change}
-            placeholder="123456"
-            maxLength={6}
-            className={`${inputClass(Boolean(errors.token))} tracking-[0.4em] text-center font-semibold`}
-          />
-          {errors.token && <p className={errorClass}>{errors.token}</p>}
-        </div>
-
-        {/* ── Optional-password tip ──────────────────────────────────────
-            Sky-toned banner that visually separates from the violet
-            recap card and the green/red notice. Sits directly above the
-            password fields so the context is obvious. */}
-        <div className="rounded-lg bg-sky-50 border border-sky-100 px-3 py-2.5 text-xs text-sky-800 flex items-start gap-2">
-          <svg
-            className="mt-0.5 shrink-0 text-sky-500"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-          <span className="leading-snug">
-            <strong className="font-semibold">Password is optional.</strong> Set
-            one below only if your account doesn&apos;t have a password yet. If
-            you already have one, leave these blank, your existing password
-            won&apos;t change. To change it, use{" "}
-            <Link
-              href="/password-reset"
-              className="font-semibold underline underline-offset-2 hover:text-sky-900"
-            >
-              reset password
-            </Link>
-            .
-          </span>
-        </div>
-
-        {/* New password — optional, see tip above */}
-        <div>
-          <label htmlFor="password" className={labelClass}>
-            Set Password{" "}
-            <span className="ml-1 text-gray-400 font-normal normal-case tracking-normal">
-              (optional)
-            </span>
-          </label>
-          <div className="relative">
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="new-password"
-              value={step2Values.password}
-              onChange={handleStep2Change}
-              placeholder="Leave blank if you already have a password"
-              className={`${inputClass(Boolean(errors.password))} pr-9`}
-            />
-            <EyeToggle
-              show={showPassword}
-              onToggle={() => setShowPassword((v) => !v)}
-            />
-          </div>
-          {errors.password ? (
-            <p className={errorClass}>{errors.password}</p>
-          ) : (
-            <p className="mt-1 text-[11px] text-gray-400">
-              8+ chars · uppercase · lowercase · number · special
-            </p>
-          )}
-        </div>
-
-        {/* Confirm new password — required only when a password was entered */}
-        <div>
-          <label htmlFor="password_repeat" className={labelClass}>
-            Confirm Password{" "}
-            <span className="ml-1 text-gray-400 font-normal normal-case tracking-normal">
-              (optional)
-            </span>
-          </label>
-          <div className="relative">
-            <input
-              id="password_repeat"
-              name="password_repeat"
-              type={showPasswordRepeat ? "text" : "password"}
-              autoComplete="new-password"
-              value={step2Values.password_repeat}
-              onChange={handleStep2Change}
-              placeholder="Re-enter password"
-              className={`${inputClass(Boolean(errors.password_repeat))} pr-9`}
-            />
-            <EyeToggle
-              show={showPasswordRepeat}
-              onToggle={() => setShowPasswordRepeat((v) => !v)}
-            />
-          </div>
-          {errors.password_repeat && (
-            <p className={errorClass}>{errors.password_repeat}</p>
-          )}
-        </div>
+        {/* 6-digit code */}
+        <CodeInput
+          id="token"
+          value={token}
+          onChange={handleTokenChange}
+          error={errors.token}
+        />
 
         {/* Resend control — disabled while the cooldown timer is running */}
         <div className="flex items-center justify-between text-xs">

@@ -38,7 +38,15 @@ interface StaffSchool {
   name: string;
 }
 
-// A staff portfolio — the primary record returned by GET staff/portfolios/
+// Where a staff member's admin-sent invitation stands. null once the person has
+// accepted it, and for staff who signed themselves up.
+//   pending  — a valid code is waiting to be used
+//   expired  — the code ran out (invitations last 24 hours)
+//   locked   — too many wrong codes were entered
+//   revoked  — an administrator cancelled it
+type InviteState = "pending" | "expired" | "locked" | "revoked";
+
+// A staff portfolio — the primary record returned by GET staff/portfolios/list/
 // Mirrors StaffPortfolioSerializer with the list-view field set.
 interface StaffPortfolio {
   id: string;
@@ -48,6 +56,7 @@ interface StaffPortfolio {
   // NON=No employment type, FT=Full-time, PT=Part-time, TP=Temporary, NYSC
   employment: "NON" | "FT" | "PT" | "TP" | "NYSC";
   deleted: boolean;
+  invite_state: InviteState | null;
   staff_profile: StaffProfile;
   school: StaffSchool;
 }
@@ -73,7 +82,8 @@ interface StaffProfReq {
 }
 
 // Form input shape for creating a new staff member.
-// Sent to POST users/list/ (CustomUserSerializer create path).
+// Sent to POST staff/create/. The backend emails the person an invitation, so
+// no password is sent.
 interface CreateStaffInput {
   first_name: string;
   last_name: string;
@@ -81,6 +91,5 @@ interface CreateStaffInput {
   email: string;
   phone: string;
   gender: "M" | "F" | "";
-  joined_as: "staff";
   school_id: string;
 }

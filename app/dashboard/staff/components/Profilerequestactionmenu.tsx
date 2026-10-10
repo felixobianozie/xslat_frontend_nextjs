@@ -3,10 +3,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ProfileRequestActionMenu.tsx
 //
-// Action dropdown for profile-request rows:
+// Action dropdown for profile-request rows. Always offers:
 //   Review Requester — opens the ProfileReviewPanel
-//   Approve Request  — triggers the approve confirmation modal
-//   Decline Request  — triggers the decline confirmation modal
+// Then, depending on the request's status:
+//   Pending request     — Approve Request, Decline Request, Blacklist Requester
+//   Declined request    — nothing more; only the requester can resend it
+//   Blacklisted request — Lift and Decline, Lift and Approve
+// Each action opens the matching confirmation modal in the parent.
 //
 // The dropdown is rendered via a React portal (into document.body) so it
 // escapes any overflow-hidden ancestor — including the table wrapper — and
@@ -19,13 +22,25 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal, Eye, CheckCircle, XCircle } from "lucide-react";
+import {
+  MoreHorizontal,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Ban,
+  RotateCcw,
+} from "lucide-react";
 
 interface ProfileRequestActionMenuProps {
   requestId: string;
+  /** Decides which actions the menu offers. */
+  status: StaffProfReq["status"];
   onReview: () => void;
   onApprove: () => void;
   onDecline: () => void;
+  onBlacklist: () => void;
+  onLiftDecline: () => void;
+  onLiftApprove: () => void;
 }
 
 // Width of the dropdown panel in pixels — must match the `width` style below.
@@ -33,9 +48,13 @@ const PANEL_WIDTH = 176; // w-44 = 11rem = 176px at 16px base
 
 export default function ProfileRequestActionMenu({
   requestId,
+  status,
   onReview,
   onApprove,
   onDecline,
+  onBlacklist,
+  onLiftDecline,
+  onLiftApprove,
 }: ProfileRequestActionMenuProps) {
   const [open, setOpen] = useState(false);
 
@@ -147,31 +166,76 @@ export default function ProfileRequestActionMenu({
               Review Requester
             </button>
 
-            <button
-              role="menuitem"
-              onClick={() => {
-                onApprove();
-                setOpen(false);
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-700 hover:bg-emerald-50 transition-colors text-left"
-            >
-              <CheckCircle size={13} />
-              Approve Request
-            </button>
+            {status === "blacklisted" && (
+              <>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    onLiftApprove();
+                    setOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-700 hover:bg-emerald-50 transition-colors text-left"
+                >
+                  <CheckCircle size={13} />
+                  Lift and Approve
+                </button>
 
-            <div className="border-t border-slate-50 mt-1 pt-1">
-              <button
-                role="menuitem"
-                onClick={() => {
-                  onDecline();
-                  setOpen(false);
-                }}
-                className="cursor-pointer w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors text-left"
-              >
-                <XCircle size={13} />
-                Decline Request
-              </button>
-            </div>
+                <div className="border-t border-slate-50 mt-1 pt-1">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      onLiftDecline();
+                      setOpen(false);
+                    }}
+                    className="cursor-pointer w-full flex items-center gap-2.5 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 transition-colors text-left"
+                  >
+                    <RotateCcw size={13} />
+                    Lift and Decline
+                  </button>
+                </div>
+              </>
+            )}
+
+            {status === "pending" && (
+              <>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    onApprove();
+                    setOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-700 hover:bg-emerald-50 transition-colors text-left"
+                >
+                  <CheckCircle size={13} />
+                  Approve Request
+                </button>
+
+                <div className="border-t border-slate-50 mt-1 pt-1">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      onDecline();
+                      setOpen(false);
+                    }}
+                    className="cursor-pointer w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <XCircle size={13} />
+                    Decline Request
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      onBlacklist();
+                      setOpen(false);
+                    }}
+                    className="cursor-pointer w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-600 hover:bg-slate-100 transition-colors text-left"
+                  >
+                    <Ban size={13} />
+                    Blacklist Requester
+                  </button>
+                </div>
+              </>
+            )}
 
             {/*
               Arrow pointer — points RIGHT toward the three-dot trigger.

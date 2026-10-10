@@ -5,9 +5,13 @@
 //
 // A three-dot button that opens a contextual dropdown with actions for a
 // staff portfolio row:
-//   0 — View Profile          (navigates to /dashboard/staff-profile?id=...)
-//   1 — Send Activation Link
-//   2 — Delete Staff          (danger action)
+//   View Profile        (navigates to /dashboard/staff-profile?id=...)
+//   Invitation actions  — only for staff whose invitation has not been
+//                         accepted (inviteState is not null):
+//                           Resend Invitation   always
+//                           Change Email        unless the invitation is revoked
+//                           Revoke Invitation   unless it is already revoked
+//   Delete Staff        (danger action)
 //
 // The dropdown is rendered via a React portal (into document.body) so it
 // escapes any overflow-hidden ancestor — including the table wrapper — and
@@ -20,12 +24,16 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal, Eye, Send, Trash2 } from "lucide-react";
+import { MoreHorizontal, Eye, Send, Mail, Ban, Trash2 } from "lucide-react";
 
 interface StaffActionMenuProps {
   portfolioId: string;
+  /** The staff member's invitation state; null when there is no open invitation. */
+  inviteState: InviteState | null;
   onViewProfile: () => void;
-  onSendActivationLink: () => void;
+  onResendInvite: () => void;
+  onChangeInviteEmail: () => void;
+  onRevokeInvite: () => void;
   onDelete: () => void;
 }
 
@@ -34,8 +42,11 @@ const PANEL_WIDTH = 192; // w-48 = 12rem = 192px at 16px base
 
 export default function StaffActionMenu({
   portfolioId,
+  inviteState,
   onViewProfile,
-  onSendActivationLink,
+  onResendInvite,
+  onChangeInviteEmail,
+  onRevokeInvite,
   onDelete,
 }: StaffActionMenuProps) {
   const [open, setOpen] = useState(false);
@@ -144,14 +155,38 @@ export default function StaffActionMenu({
                 setOpen(false);
               }}
             />
-            <MenuItem
-              icon={<Send size={13} />}
-              label="Send Activation Link"
-              onClick={() => {
-                onSendActivationLink();
-                setOpen(false);
-              }}
-            />
+            {inviteState && (
+              <>
+                <MenuItem
+                  icon={<Send size={13} />}
+                  label="Resend Invitation"
+                  onClick={() => {
+                    onResendInvite();
+                    setOpen(false);
+                  }}
+                />
+                {inviteState !== "revoked" && (
+                  <>
+                    <MenuItem
+                      icon={<Mail size={13} />}
+                      label="Change Email"
+                      onClick={() => {
+                        onChangeInviteEmail();
+                        setOpen(false);
+                      }}
+                    />
+                    <MenuItem
+                      icon={<Ban size={13} />}
+                      label="Revoke Invitation"
+                      onClick={() => {
+                        onRevokeInvite();
+                        setOpen(false);
+                      }}
+                    />
+                  </>
+                )}
+              </>
+            )}
             <div className="border-t border-slate-50 mt-1 pt-1">
               <MenuItem
                 icon={<Trash2 size={13} />}

@@ -3,16 +3,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ProfileRequests.tsx
 //
-// Displays pending staff profile requests for the school.
+// Staff profile requests for the school, in three views:
+//   Pending     — requests waiting for a decision (the default view)
+//   Declined    — requests an approver turned down. Read-only here: only the
+//                 requester can resend a declined request.
+//   Blacklisted — people who were blacklisted and cannot request again until
+//                 the blacklist is lifted
+//
+// What an approver can do:
+//   Pending request      → Approve, Decline, or Blacklist
+//   Declined request     → Review the details only
+//   Blacklisted request  → Lift and decline (the person may apply again), or
+//                          Lift and approve (grants the staff portfolio now)
 //
 // Data layer:
-//  - initialData is server-fetched by the parent page on first load.
-//  - useQuery is the single source of truth after hydration.
-//  - Approve and decline are handled by dedicated useMutation hooks that call
-//    PUT staff/requests/detail/ with { request_id, status }.
-//  - On success each mutation invalidates the relevant query caches:
-//      Approve → requests + staff list + staff stats (portfolio is created)
-//      Decline → requests only
+//  - initialData is server-fetched by the parent page and used for the
+//    Pending view. The other views load when they are first opened.
+//  - useQuery is the single source of truth after hydration. The query key
+//    includes the view, so each view is cached on its own.
+//  - Every action goes through one useMutation that calls
+//    PUT staff/requests/review/ with { request_id, status }.
+//  - On success the mutation refreshes the requests caches. An approval also
+//    creates a staff portfolio, so the staff list and stats refresh too.
 //  - initialDataUpdatedAt: Date.now() prevents an immediate background
 //    refetch on mount, treating the server data as already fresh.
 //  - isPending (not isLoading) drives the skeleton — correct for React Query v5.
@@ -38,6 +50,130 @@ import TableLoader from "../../components/Tableloader";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
+// The lists the tab switcher shows. The value is also the `status` filter
+// sent to the backend.
+type RequestView = "pending" | "declined" | "blacklisted";
+
+const VIEW_LABELS: Record<RequestView, string> = {
+  pending: "Pending",
+  declined: "Declined",
+  blacklisted: "Blacklisted",
+};
+
+// What the empty state says for the views other than Pending (Pending uses the
+// standard requests empty state)
+const EMPTY_MESSAGES: Record<
+  Exclude<RequestView, "pending">,
+  { title: string; description: string }
+> = {
+  declined: {
+    title: "No declined requests",
+    description: "Requests you decline will appear here.",
+  },
+  blacklisted: {
+    title: "No blacklisted requesters",
+    description:
+      "People you blacklist will appear here, where you can lift the blacklist.",
+  },
+};
+
+// Everything an approver can do to a request
+export type ReviewAction =
+  | "approve"
+  | "decline"
+  | "blacklist"
+  | "lift-decline"
+  | "lift-approve";
+
+// What each action sends to the backend and how it is presented to the user
+interface ActionConfig {
+  /** The `status` sent to staff/requests/review/. */
+  status: "approved" | "declined" | "blacklisted";
+  title: string;
+  confirmLabel: string;
+  /** Tailwind classes for the confirm button (background + text colour). */
+  confirmClass: string;
+  success: string;
+  /** The sentence shown in the confirmation modal. */
+  describe: (name: string) => ReactNode;
+}
+
+const ACTIONS: Record<ReviewAction, ActionConfig> = {
+  approve: {
+    status: "approved",
+    title: "Approve Staff Profile",
+    confirmLabel: "Approve",
+    confirmClass: "bg-violet-700 hover:bg-violet-800 text-white",
+    success: "Request approved successfully.",
+    describe: (name) => (
+      <>
+        You are about to approve <span className="font-bold">{name}</span> as
+        staff. Click <span className="font-bold">&apos;Approve&apos;</span> to
+        proceed.
+      </>
+    ),
+  },
+  decline: {
+    status: "declined",
+    title: "Decline Staff Profile",
+    confirmLabel: "Decline",
+    confirmClass: "bg-red-600 hover:bg-red-700 text-white",
+    success: "Request declined.",
+    describe: (name) => (
+      <>
+        You are about to decline <span className="font-bold">{name}</span>.
+        Click <span className="font-bold">&apos;Decline&apos;</span> to proceed.
+      </>
+    ),
+  },
+  blacklist: {
+    status: "blacklisted",
+    title: "Blacklist Requester",
+    confirmLabel: "Blacklist",
+    confirmClass: "bg-slate-800 hover:bg-slate-900 text-white",
+    success: "Requester blacklisted.",
+    describe: (name) => (
+      <>
+        You are about to blacklist <span className="font-bold">{name}</span>.
+        They will not be able to request staff access at this school again until
+        you lift the blacklist. Click{" "}
+        <span className="font-bold">&apos;Blacklist&apos;</span> to proceed.
+      </>
+    ),
+  },
+  "lift-decline": {
+    status: "declined",
+    title: "Lift Blacklist and Decline",
+    confirmLabel: "Lift and Decline",
+    confirmClass: "bg-amber-600 hover:bg-amber-700 text-white",
+    success: "Blacklist lifted. The requester can apply again.",
+    describe: (name) => (
+      <>
+        You are about to lift the blacklist on{" "}
+        <span className="font-bold">{name}</span> and decline the request. They
+        will be able to send a new request. Click{" "}
+        <span className="font-bold">&apos;Lift and Decline&apos;</span> to
+        proceed.
+      </>
+    ),
+  },
+  "lift-approve": {
+    status: "approved",
+    title: "Lift Blacklist and Approve",
+    confirmLabel: "Lift and Approve",
+    confirmClass: "bg-violet-700 hover:bg-violet-800 text-white",
+    success: "Blacklist lifted and request approved.",
+    describe: (name) => (
+      <>
+        You are about to lift the blacklist on{" "}
+        <span className="font-bold">{name}</span> and approve them as staff.
+        Click <span className="font-bold">&apos;Lift and Approve&apos;</span> to
+        proceed.
+      </>
+    ),
+  },
+};
+
 // ── Props ──────────────────────────────────────────────────────────────────
 
 interface ProfileRequestsProps {
@@ -50,80 +186,103 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
   const { clientAuthFetch } = useClientAuthFetch();
 
   // ── UI state ───────────────────────────────────────────────────────────────
+  const [view, setView] = useState<RequestView>("pending");
   const [selectedRequest, setSelectedRequest] = useState<StaffProfReq | null>(
     null,
   );
   const [showReviewPanel, setShowReviewPanel] = useState(false);
-  const [showApproveModal, setShowApproveModal] = useState(false);
-  const [showDeclineModal, setShowDeclineModal] = useState(false);
+  // The action waiting for the approver's confirmation, with its request
+  const [pendingAction, setPendingAction] = useState<{
+    action: ReviewAction;
+    request: StaffProfReq;
+  } | null>(null);
 
   // ── React Query ────────────────────────────────────────────────────────────
   const { data: requests = [], isPending } = useQuery<StaffProfReq[]>({
-    queryKey: ["staff-requests", SCHOOL_ID],
+    queryKey: ["staff-requests", SCHOOL_ID, view],
 
     queryFn: async () => {
       const { data, error } = await clientAuthFetch<{ data: StaffProfReq[] }>(
-        `staff/requests/list/?school-id=${SCHOOL_ID}&status=pending`,
+        `staff/requests/list/?school-id=${SCHOOL_ID}&status=${view}`,
       );
 
       if (error) throw new Error(error.message);
       return data!.data;
     },
 
-    initialData,
+    // The server only fetched the pending list
+    initialData: view === "pending" ? initialData : undefined,
     initialDataUpdatedAt: Date.now(),
   });
 
-  // ── Approve mutation ───────────────────────────────────────────────────────
-  // pending → approved also creates a StaffPortfolio on the backend,
-  // so staff list and stats caches are invalidated too.
-  const { mutate: approveRequest, isPending: isApproving } = useMutation({
-    mutationFn: async (requestId: string) => {
-      const { data, error } = await clientAuthFetch("staff/requests/detail/", {
+  // ── Review mutation ────────────────────────────────────────────────────────
+  // One mutation serves every action. An approval also creates a
+  // StaffPortfolio on the backend, so the staff list and stats refresh too.
+  const { mutate: reviewRequest, isPending: isReviewing } = useMutation<
+    unknown,
+    Error,
+    { requestId: string; action: ReviewAction }
+  >({
+    mutationFn: async ({ requestId, action }) => {
+      const { data, error } = await clientAuthFetch("staff/requests/review/", {
         method: "PUT",
-        body: { request_id: requestId, status: "approved" },
+        body: { request_id: requestId, status: ACTIONS[action].status },
       });
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => {
-      toast.success("Request approved successfully.");
-      setShowApproveModal(false);
+    onSuccess: (_data, { action }) => {
+      toast.success(ACTIONS[action].success);
+      setPendingAction(null);
       setSelectedRequest(null);
       queryClient.invalidateQueries({
         queryKey: ["staff-requests", SCHOOL_ID],
       });
-      queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
-      queryClient.invalidateQueries({ queryKey: ["staff-stats", SCHOOL_ID] });
+      if (ACTIONS[action].status === "approved") {
+        queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
+        queryClient.invalidateQueries({ queryKey: ["staff-stats", SCHOOL_ID] });
+      }
     },
-    onError: (err: Error) => {
-      toast.error(err.message ?? "Approval failed. Please try again.");
+    onError: (err) => {
+      toast.error(err.message ?? "That action failed. Please try again.");
     },
   });
 
-  // ── Decline mutation ───────────────────────────────────────────────────────
-  // pending → declined. No portfolio created, so only requests cache refreshes.
-  const { mutate: declineRequest, isPending: isDeclining } = useMutation({
-    mutationFn: async (requestId: string) => {
-      const { data, error } = await clientAuthFetch("staff/requests/detail/", {
-        method: "PUT",
-        body: { request_id: requestId, status: "declined" },
-      });
-      if (error) throw new Error(error.message);
-      return data;
-    },
-    onSuccess: () => {
-      toast.success("Request declined.");
-      setShowDeclineModal(false);
-      setSelectedRequest(null);
-      queryClient.invalidateQueries({
-        queryKey: ["staff-requests", SCHOOL_ID],
-      });
-    },
-    onError: (err: Error) => {
-      toast.error(err.message ?? "Decline failed. Please try again.");
-    },
-  });
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function fullName(req: StaffProfReq) {
+    return `${req.user.first_name} ${req.user.last_name}`;
+  }
+
+  // Opens the confirmation modal for an action on a request
+  function askToConfirm(action: ReviewAction, req: StaffProfReq) {
+    setSelectedRequest(req);
+    setPendingAction({ action, request: req });
+  }
+
+  function openReview(req: StaffProfReq) {
+    setSelectedRequest(req);
+    setShowReviewPanel(true);
+  }
+
+  // The row's three-dot menu, used by both the table and the mobile cards
+  function renderActionMenu(req: StaffProfReq) {
+    return (
+      <ProfileRequestActionMenu
+        requestId={req.id}
+        status={req.status}
+        onReview={() => openReview(req)}
+        onApprove={() => askToConfirm("approve", req)}
+        onDecline={() => askToConfirm("decline", req)}
+        onBlacklist={() => askToConfirm("blacklist", req)}
+        onLiftDecline={() => askToConfirm("lift-decline", req)}
+        onLiftApprove={() => askToConfirm("lift-approve", req)}
+      />
+    );
+  }
+
+  // The confirmation modal's content for the waiting action, if any
+  const currentConfig = pendingAction ? ACTIONS[pendingAction.action] : null;
 
   return (
     <div className="flex">
@@ -133,10 +292,38 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
           showReviewPanel ? "w-0 opacity-0" : "w-full opacity-100"
         }`}
       >
+        {/* View switcher */}
+        <div
+          className="flex gap-2 mt-6"
+          role="tablist"
+          aria-label="Request views"
+        >
+          {(Object.keys(VIEW_LABELS) as RequestView[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              className={`cursor-pointer px-3 py-1.5 text-xs rounded-xl border transition-colors ${
+                view === key
+                  ? "bg-violet-600 border-violet-600 text-white shadow-sm"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-violet-300 hover:text-violet-700"
+              }`}
+            >
+              {VIEW_LABELS[key]}
+            </button>
+          ))}
+        </div>
+
         {isPending ? (
           <TableLoader rows={4} className="my-6" />
         ) : requests.length === 0 ? (
-          <EmptyState variant="requests" />
+          view === "pending" ? (
+            <EmptyState variant="requests" />
+          ) : (
+            <EmptyState variant="requests" {...EMPTY_MESSAGES[view]} />
+          )
         ) : (
           <>
             {/* ── Desktop table ─────────────────────────────────────── */}
@@ -170,8 +357,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                             className="font-medium text-slate-800 hover:text-violet-700 cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedRequest(req);
-                              setShowReviewPanel(true);
+                              openReview(req);
                             }}
                           >
                             {req.user.first_name} {req.user.last_name}
@@ -194,21 +380,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                         )}
                       </td>
                       <td className="px-5" onClick={(e) => e.stopPropagation()}>
-                        <ProfileRequestActionMenu
-                          requestId={req.id}
-                          onReview={() => {
-                            setSelectedRequest(req);
-                            setShowReviewPanel(true);
-                          }}
-                          onApprove={() => {
-                            setSelectedRequest(req);
-                            setShowApproveModal(true);
-                          }}
-                          onDecline={() => {
-                            setSelectedRequest(req);
-                            setShowDeclineModal(true);
-                          }}
-                        />
+                        {renderActionMenu(req)}
                       </td>
                     </tr>
                   ))}
@@ -235,8 +407,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                           className="text-sm font-semibold text-slate-800 truncate"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedRequest(req);
-                            setShowReviewPanel(true);
+                            openReview(req);
                           }}
                         >
                           {req.user.first_name} {req.user.last_name}
@@ -247,21 +418,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                       </div>
                     </div>
                     <div onClick={(e) => e.stopPropagation()}>
-                      <ProfileRequestActionMenu
-                        requestId={req.id}
-                        onReview={() => {
-                          setSelectedRequest(req);
-                          setShowReviewPanel(true);
-                        }}
-                        onApprove={() => {
-                          setSelectedRequest(req);
-                          setShowApproveModal(true);
-                        }}
-                        onDecline={() => {
-                          setSelectedRequest(req);
-                          setShowDeclineModal(true);
-                        }}
-                      />
+                      {renderActionMenu(req)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 px-4 py-2.5">
@@ -287,61 +444,33 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
           setShowReviewPanel(false);
           setSelectedRequest(null);
         }}
-        onApprove={() => {
+        onAction={(action) => {
           setShowReviewPanel(false);
-          setShowApproveModal(true);
-        }}
-        onDecline={() => {
-          setShowReviewPanel(false);
-          setShowDeclineModal(true);
+          if (selectedRequest) askToConfirm(action, selectedRequest);
         }}
       />
 
-      {/* ── Approve confirmation modal ────────────────────────────────── */}
+      {/* ── Confirmation modal — one for every action ─────────────────── */}
       <ConfirmModal
-        open={showApproveModal}
-        title="Approve Staff Profile"
+        open={pendingAction !== null}
+        title={currentConfig?.title ?? ""}
         message={
-          <>
-            You are about to approve{" "}
-            <span className="font-bold">
-              {selectedRequest?.user.first_name}{" "}
-              {selectedRequest?.user.last_name}
-            </span>{" "}
-            as staff. Click <span className="font-bold">'Approve'</span> to
-            proceed.
-          </>
+          currentConfig && pendingAction
+            ? currentConfig.describe(fullName(pendingAction.request))
+            : null
         }
-        confirmLabel="Approve"
-        confirmClass="bg-violet-700 hover:bg-violet-800 text-white"
-        isLoading={isApproving}
-        onConfirm={() => selectedRequest && approveRequest(selectedRequest.id)}
-        onCancel={() => {
-          setShowApproveModal(false);
-          setSelectedRequest(null);
-        }}
-      />
-
-      {/* ── Decline confirmation modal ────────────────────────────────── */}
-      <ConfirmModal
-        open={showDeclineModal}
-        title="Decline Staff Profile"
-        message={
-          <>
-            You are about to decline{" "}
-            <span className="font-bold">
-              {selectedRequest?.user.first_name}{" "}
-              {selectedRequest?.user.last_name}
-            </span>
-            . Click <span className="font-bold">'Decline'</span> to proceed.
-          </>
+        confirmLabel={currentConfig?.confirmLabel ?? ""}
+        confirmClass={currentConfig?.confirmClass ?? ""}
+        isLoading={isReviewing}
+        onConfirm={() =>
+          pendingAction &&
+          reviewRequest({
+            requestId: pendingAction.request.id,
+            action: pendingAction.action,
+          })
         }
-        confirmLabel="Decline"
-        confirmClass="bg-red-600 hover:bg-red-700 text-white"
-        isLoading={isDeclining}
-        onConfirm={() => selectedRequest && declineRequest(selectedRequest.id)}
         onCancel={() => {
-          setShowDeclineModal(false);
+          setPendingAction(null);
           setSelectedRequest(null);
         }}
       />
@@ -369,8 +498,8 @@ function StatusBadge({ status }: { status: StaffProfReq["status"] }) {
 
 // ── ConfirmModal ───────────────────────────────────────────────────────────
 //
-// Private confirmation dialog — used only within this file for the approve
-// and decline actions. Not exported.
+// Private confirmation dialog — used only within this file, for every review
+// action. Not exported.
 //
 // Built with plain Tailwind — no DaisyUI dependencies.
 // A fixed backdrop dims the page; the card is centred over it.

@@ -5,7 +5,15 @@
 //
 // Renders the paginated staff portfolio list.
 // Includes: search, filter (backend-aligned params), PDF download, print,
-// and a Create Staff slide-in panel.
+// a Create Staff slide-in panel, and invitation management.
+//
+// Invitations:
+//  - A staff member an administrator created, who has not accepted yet, shows
+//    an invitation badge (pending, expired, locked or revoked) taken from the
+//    portfolio's `invite_state`.
+//  - Their row menu offers Resend Invitation, Change Email and Revoke
+//    Invitation (see Staffactionmenu.tsx). Resend is a direct action here;
+//    Change Email and Revoke open StaffInviteDialog.
 //
 // Data layer:
 //  - initialData is the full server-fetched paginated envelope for page 1.
@@ -27,7 +35,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useReactToPrint } from "react-to-print";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Filter,
@@ -41,6 +49,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import StaffActionMenu from "./Staffactionmenu";
 import StaffCreatePanel from "./Staffcreatepanel";
+import StaffInviteDialog from "./Staffinvitedialog";
 import StaffPrintTemplate from "./Staffprinttemplate";
 import Paginator, { PAGE_SIZE } from "../../components/Paginator";
 import EmptyState from "../../components/Emptystate";
@@ -149,6 +158,11 @@ export default function StaffList({ initialData }: StaffListProps) {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // The invitation dialog being shown (change email / revoke), if any
+  const [inviteDialog, setInviteDialog] = useState<{
+    kind: "email" | "revoke";
+    portfolio: StaffPortfolio;
+  } | null>(null);
 
   // Refs
   const filterDropdownRef = useRef<HTMLDivElement>(null);
@@ -270,21 +284,68 @@ export default function StaffList({ initialData }: StaffListProps) {
     queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
   }
 
+  // ── Resend invitation ──────────────────────────────────────────────────────
+  // Gives the invitation a new code and a fresh 24-hour expiry, reactivates the
+  // portfolio if it was revoked, and emails the invitation again.
+  const { mutate: resendInvite } = useMutation<
+    { message: string; data: { invite_sent: boolean } } | undefined,
+    Error,
+    string
+  >({
+    mutationFn: async (portfolioId) => {
+      const { data, error } = await clientAuthFetch<{
+        message: string;
+        data: { invite_sent: boolean };
+      }>("staff/invite/resend/", {
+        method: "POST",
+        body: { portfolio_id: portfolioId },
+      });
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: (response) => {
+      // The new code exists either way; only the email may have failed
+      if (response?.data.invite_sent === false) {
+        toast.warning(response.message);
+      } else {
+        toast.success("Invitation resent.");
+      }
+      queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  // The row's three-dot menu, used by both the table and the mobile cards
+  function renderActionMenu(portfolio: StaffPortfolio) {
+    return (
+      <StaffActionMenu
+        portfolioId={portfolio.id}
+        inviteState={portfolio.invite_state}
+        onViewProfile={() =>
+          router.push(`/dashboard/staff-profile?id=${portfolio.id}`)
+        }
+        onResendInvite={() => resendInvite(portfolio.id)}
+        onChangeInviteEmail={() =>
+          setInviteDialog({ kind: "email", portfolio })
+        }
+        onRevokeInvite={() => setInviteDialog({ kind: "revoke", portfolio })}
+        onDelete={() => handleDeleteStaff(portfolio.id)}
+      />
+    );
+  }
+
   // ── Stubbed actions ────────────────────────────────────────────────────────
-  // The following three actions have no backend endpoint yet:
-  //   - Download PDF:       no PDF/export endpoint exists in views.py
-  //   - Send Activation:    no activation/invite endpoint exists in views.py
-  //   - Delete Staff:       StaffPortfolioDetailView only exposes GET and PUT
-  //                         (no DELETE method)
+  // These two actions have no backend endpoint yet:
+  //   - Download PDF:  no PDF/export endpoint exists in views.py
+  //   - Delete Staff:  StaffPortfolioDetailView only exposes GET and PUT
+  //                    (no DELETE method)
   // Until those endpoints land, each handler surfaces the shared
   // "feature in the works" toast so the user gets clear feedback instead of a
   // silent no-op.
 
   function handleDownloadPdf() {
-    toast.info(FEATURE_IN_WORKS);
-  }
-
-  function handleSendActivationLink(_portfolioId: string) {
     toast.info(FEATURE_IN_WORKS);
   }
 
@@ -448,13 +509,21 @@ export default function StaffList({ initialData }: StaffListProps) {
                             {/* Name + ID */}
                             <td className="px-5">
                               <div className="flex flex-col">
-                                <span className="font-medium text-slate-800">
-                                  {user.first_name}{" "}
-                                  {user.middle_name
-                                    ? `${user.middle_name} `
-                                    : ""}
-                                  {user.last_name}
-                                </span>
+                                {/* Name with the invitation badge on the same line */}
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="font-medium text-slate-800">
+                                    {user.first_name}{" "}
+                                    {user.middle_name
+                                      ? `${user.middle_name} `
+                                      : ""}
+                                    {user.last_name}
+                                  </span>
+                                  {portfolio.invite_state && (
+                                    <InviteBadge
+                                      state={portfolio.invite_state}
+                                    />
+                                  )}
+                                </div>
                                 <span className="text-[10px] text-slate-400">
                                   {user.public_id}
                                 </span>
@@ -526,18 +595,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                               className="px-5"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <StaffActionMenu
-                                portfolioId={portfolio.id}
-                                onViewProfile={() =>
-                                  router.push(
-                                    `/dashboard/staff-profile?id=${portfolio.id}`,
-                                  )
-                                }
-                                onSendActivationLink={() =>
-                                  handleSendActivationLink(portfolio.id)
-                                }
-                                onDelete={() => handleDeleteStaff(portfolio.id)}
-                              />
+                              {renderActionMenu(portfolio)}
                             </td>
                           </tr>
                         );
@@ -565,26 +623,21 @@ export default function StaffList({ initialData }: StaffListProps) {
                         {/* Card header */}
                         <div className="flex items-center justify-between p-4 border-b border-slate-50">
                           <div className="flex flex-col min-w-0">
-                            <span className="text-sm font-semibold text-slate-800 truncate">
-                              {user.first_name} {user.last_name}
-                            </span>
+                            {/* Name with the invitation badge on the same line */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm font-semibold text-slate-800 truncate">
+                                {user.first_name} {user.last_name}
+                              </span>
+                              {portfolio.invite_state && (
+                                <InviteBadge state={portfolio.invite_state} />
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-400">
                               {user.public_id}
                             </span>
                           </div>
                           <div onClick={(e) => e.stopPropagation()}>
-                            <StaffActionMenu
-                              portfolioId={portfolio.id}
-                              onViewProfile={() =>
-                                router.push(
-                                  `/dashboard/staff-profile?id=${portfolio.id}`,
-                                )
-                              }
-                              onSendActivationLink={() =>
-                                handleSendActivationLink(portfolio.id)
-                              }
-                              onDelete={() => handleDeleteStaff(portfolio.id)}
-                            />
+                            {renderActionMenu(portfolio)}
                           </div>
                         </div>
 
@@ -654,6 +707,15 @@ export default function StaffList({ initialData }: StaffListProps) {
         />
       </div>
 
+      {/* Invitation dialog — change email or revoke */}
+      {inviteDialog && (
+        <StaffInviteDialog
+          kind={inviteDialog.kind}
+          portfolio={inviteDialog.portfolio}
+          onClose={() => setInviteDialog(null)}
+        />
+      )}
+
       {/* Hidden print template — prints all currently loaded portfolios */}
       <div className="h-0 overflow-hidden">
         <StaffPrintTemplate ref={printRef} portfolios={portfolios} />
@@ -697,5 +759,28 @@ function ContactCell({
       {/* The contact value itself */}
       <span className="truncate text-slate-700 text-[11px]">{value}</span>
     </div>
+  );
+}
+
+// ── InviteBadge ──────────────────────────────────────────────────────────────
+// Shows where a staff member's invitation stands, beside their name. Only
+// rendered when the portfolio has an unaccepted invitation (invite_state is
+// not null).
+
+const INVITE_BADGES: Record<InviteState, { label: string; style: string }> = {
+  pending: { label: "Invite pending", style: "bg-amber-50 text-amber-700" },
+  expired: { label: "Invite expired", style: "bg-red-50 text-red-600" },
+  locked: { label: "Invite locked", style: "bg-red-50 text-red-600" },
+  revoked: { label: "Invite revoked", style: "bg-slate-100 text-slate-500" },
+};
+
+function InviteBadge({ state }: { state: InviteState }) {
+  const { label, style } = INVITE_BADGES[state];
+  return (
+    <span
+      className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+    >
+      {label}
+    </span>
   );
 }

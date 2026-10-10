@@ -7,7 +7,7 @@
 //
 // Actions:
 //   * Resend Request — calls back to the parent component, which fires the
-//                      PUT staff/requests/detail/ mutation (declined → pending).
+//                      PUT staff/requests/resend/ mutation (declined → pending).
 //                      Disabled when the row's status isn't "declined" since
 //                      the backend rejects any other transition from the user
 //                      side.

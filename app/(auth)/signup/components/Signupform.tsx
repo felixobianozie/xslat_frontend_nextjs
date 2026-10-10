@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import publicFetch from "@/lib/Publicfetch";
+import { friendlyThrottleMessage } from "@/lib/Throttlemessage";
 import { useRouter } from "next/navigation";
 
 type FormValues = {
@@ -145,7 +146,11 @@ export default function SignupForm() {
       setTimeout(() => router.push("/contact-validation"), 2000); // I want the user to read the toast a bit before redirection
     },
     onError: (err: any) => {
-      toast.error(err?.message ?? "Something went wrong. Please try again.");
+      toast.error(
+        friendlyThrottleMessage(err, "sign-up attempts") ??
+          err?.message ??
+          "Something went wrong. Please try again.",
+      );
       if (err?.data && typeof err.data === "object") {
         const fieldErrors: FormErrors = {};
         for (const [field, msgs] of Object.entries(err.data)) {

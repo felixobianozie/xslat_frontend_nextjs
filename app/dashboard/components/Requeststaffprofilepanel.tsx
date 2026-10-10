@@ -6,9 +6,12 @@
 // Slide-out panel for sending a "Request Staff Profile" to a school.
 //
 // Backend contract:
-//   POST staff/requests/list/  body: { user, school }
-//   * user  — UUID of the currently logged-in user (from session JWT claims).
+//   POST staff/requests/list/  body: { school }
 //   * school — UUID of the school to request membership in.
+//   The request is always filed for the logged-in user; the backend takes the
+//   user from the session, so the body carries no user.
+//   * Filing requests is rate limited. Past the limit the backend answers 429
+//     and the panel shows a friendly "wait about N minutes" message.
 //
 // School picker:
 //   * GET school/list/?name=<query> is used for live search.
@@ -28,6 +31,7 @@ import { Building2, ChevronLeft, Search, UserCog } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import { friendlyThrottleMessage } from "@/lib/Throttlemessage";
 import ButtonLoader from "../components/Buttonloader";
 
 interface SchoolOption {
@@ -110,9 +114,13 @@ export default function RequestStaffProfilePanel({
       if (!selectedSchoolId) throw new Error("Please select a school.");
       const { data, error } = await clientAuthFetch("staff/requests/list/", {
         method: "POST",
-        body: { user: userId, school: selectedSchoolId },
+        body: { school: selectedSchoolId },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        throw new Error(
+          friendlyThrottleMessage(error, "staff requests") ?? error.message,
+        );
+      }
       return data;
     },
     onSuccess: () => {

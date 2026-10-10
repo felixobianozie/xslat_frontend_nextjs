@@ -71,9 +71,8 @@ async function fetchInitialPortfolios(): Promise<PaginatedResponse<StaffPortfoli
  */
 async function fetchInitialRequests(): Promise<StaffProfReq[]> {
   const { data, error } = await serverAuthFetch<{ data: StaffProfReq[] }>(
-    `staff/requests/list/?school-id=${SCHOOL_ID}`,
+    `staff/requests/list/?school-id=${SCHOOL_ID}&status=pending`,
   );
-  // &status=pending
 
   if (error || !data) {
     console.error("Failed to fetch initial staff requests:", error?.message);

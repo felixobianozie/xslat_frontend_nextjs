@@ -5,16 +5,23 @@
 //
 // Slide-in panel for creating a new staff member.
 //
-// Backend reference (CustomUserSerializer — POST users/list/):
+// Backend reference (POST staff/create/):
 //   Required fields: first_name, last_name, email, gender,
-//                    joined_as ("staff" — fixed), school_id (from env),
-//                    created_by (active admin's user_id from session claims)
+//                    school_id (from env)
 //   Optional fields: middle_name, phone
 //   Phone format:    E.164 — must start with + (e.g. +2348012345678)
 //                    Backend regex: ^\+\d{1,3}\d{7,15}$
 //
-//   Success (201): { message, data: { id, public_id, first_name, ... } }
+// The backend creates the account with no password and emails the person an
+// invitation (a link and a 6-digit code, valid for 24 hours). They set their
+// own password when they accept it. The admin never sees or sets a password.
+//
+//   Success (201): { message, data: { id, email, portfolio_id,
+//                    invite_sent, invite_expires_on } }
+//                  `invite_sent` is false when the email could not be sent;
+//                  the admin can then use "Resend invitation" on the staff list.
 //   Error   (400): { message, data: { field: ["error text", ...] } }
+//   Error   (403): the admin lacks the "Create Staff" permission in this school.
 //
 // Data layer:
 //   useMutation handles the POST request. On success the staff and stats
@@ -27,7 +34,6 @@ import { useState, ChangeEvent } from "react";
 import { ChevronLeft, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "react-toastify";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../components/Buttonloader";
 
@@ -102,12 +108,6 @@ export default function StaffCreatePanel({
   const queryClient = useQueryClient();
   const { clientAuthFetch } = useClientAuthFetch();
 
-  // Read the active admin's user_id from the session JWT claims.
-  // session.accessClaims is decoded from the backend-issued access token;
-  // user_id is embedded in the token payload by CustomJWTSerializer.
-  const { data: session } = useSession();
-  const createdBy = session?.accessClaims?.user_id ?? "";
-
   // ── Form state ─────────────────────────────────────────────────────────────
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<Partial<Record<FormField, string>>>({});
@@ -120,8 +120,8 @@ export default function StaffCreatePanel({
     mutationFn: async (payload: FormValues) => {
       const { data, error } = await clientAuthFetch<{
         message: string;
-        data: Record<string, string[]>;
-      }>("users/list/", {
+        data: { email: string; invite_sent: boolean };
+      }>("staff/create/", {
         method: "POST",
         body: {
           // User-supplied fields
@@ -132,10 +132,8 @@ export default function StaffCreatePanel({
           ...(payload.phone ? { phone: payload.phone } : {}),
           gender: payload.gender,
 
-          // Hidden fields — fixed values not exposed in the form
-          joined_as: "staff",
+          // Fixed value not exposed in the form
           school_id: SCHOOL_ID,
-          created_by: createdBy,
         },
       });
 
@@ -147,8 +145,17 @@ export default function StaffCreatePanel({
       return data;
     },
 
-    onSuccess: () => {
-      toast.success("Staff created successfully.");
+    onSuccess: (response) => {
+      // The account exists either way; only the email may have failed to send
+      if (response?.data.invite_sent === false) {
+        toast.warning(
+          "Staff created, but the invitation email could not be sent. Use “Resend invitation” on the staff list.",
+        );
+      } else {
+        toast.success(
+          `Staff created. An invitation was emailed to ${response?.data.email ?? "them"}.`,
+        );
+      }
 
       // Reset form state
       setValues(INITIAL_VALUES);
@@ -288,7 +295,8 @@ export default function StaffCreatePanel({
             <h2 className="text-sm font-bold text-slate-800">Create Staff</h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Fields marked <span className="text-red-500 font-medium">*</span>{" "}
-              are required.
+              are required. The new staff member is emailed an invitation to
+              activate their account and choose a password.
             </p>
           </div>
 
