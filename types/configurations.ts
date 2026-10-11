@@ -122,6 +122,19 @@ export interface SubjectDefinitionRecord {
   abbr: string;
 }
 
+// ── Term subjects ────────────────────────────────────────────────────────────
+
+// A subject definition offered in one term. `subject_arms` lists the arms of
+// that term that offer it.
+export interface TermSubjectRecord {
+  id: string;
+  definition: SubjectDefinitionRecord;
+  subject_arms: {
+    id: string;
+    arm: { id: string; name: string; abbr: string };
+  }[];
+}
+
 // ── Pass rules ───────────────────────────────────────────────────────────────
 
 export type PassRuleType = "score" | "count";

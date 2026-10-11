@@ -8,7 +8,9 @@
 // the three assessment formats and the pass rule.
 //
 // Admins tick one or more arms and choose "Assign settings" to give them the
-// same settings in one go (see Armassignpanel.tsx).
+// same settings in one go (see Armassignpanel.tsx), or "Manage subjects" to add
+// subjects to, or remove them from, all the ticked arms at once (see
+// Armsubjectspanel.tsx).
 //
 // Data:
 //   • The current term comes from the school record (school/detail/) and the
@@ -18,6 +20,8 @@
 //     (arm/detail/) is requested too. These entries share their cache with the
 //     arm page. After an assignment, only the arms that were changed are
 //     refetched.
+//   • The term's subjects (subject/list/) say which arms offer each subject.
+//     They share their cache entry with the Subjects tab.
 //
 // Arms whose broadsheet is submitted or approved are locked by the backend, so
 // they are shown but cannot be ticked.
@@ -29,11 +33,7 @@ import { Lock } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
-import type {
-  ApiEnvelope,
-  ArmAssignmentsData,
-  SchoolDetailData,
-} from "@/types/configurations";
+import type { ApiEnvelope, ArmAssignmentsData } from "@/types/configurations";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
 import {
@@ -42,11 +42,14 @@ import {
   ASSIGNMENT_PARAMETERS,
   QUERY_STALE_MS,
   SCHOOL_ID,
-  SCHOOL_KEY,
+  TERM_SUBJECTS_KEY,
   armLabel,
   isArmLocked,
 } from "../configutils";
+import { useCurrentTerm } from "../hooks/Usecurrentterm";
+import { useTermSubjects } from "../hooks/Usetermsubjects";
 import ArmAssignPanel from "./Armassignpanel";
+import ArmSubjectsPanel from "./Armsubjectspanel";
 import { ErrorNotice, ListToolbar } from "./Configui";
 import SlidePanelLayout from "./Slidepanellayout";
 
@@ -56,25 +59,18 @@ export default function ArmAssignmentsTab() {
 
   // The school record carries the current term. The cache entry is shared with
   // the dashboard top bar.
-  const school = useQuery<ApiEnvelope<SchoolDetailData>>({
-    queryKey: SCHOOL_KEY,
-    queryFn: async () => {
-      const { data, error } = await clientAuthFetch<
-        ApiEnvelope<SchoolDetailData>
-      >(`school/detail/?id=${SCHOOL_ID}`);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    staleTime: QUERY_STALE_MS,
-  });
-
-  const currentTerm = school.data?.data.current_term ?? null;
+  const { school, currentTerm } = useCurrentTerm();
+  const subjectsQuery = useTermSubjects(currentTerm?.id);
+  const termSubjects = subjectsQuery.data?.data ?? [];
 
   // Ids of the ticked arms.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // The arms shown in the panel. Kept after the panel closes so the panel still
   // has its content while it slides out.
   const [panelArms, setPanelArms] = useState<ClassArm[]>([]);
+  const [panelKind, setPanelKind] = useState<"settings" | "subjects">(
+    "settings",
+  );
   const [panelOpen, setPanelOpen] = useState(false);
 
   const armsQuery = useQuery<ApiEnvelope<ClassArm[]>>({
@@ -122,14 +118,32 @@ export default function ArmAssignmentsTab() {
     );
   }
 
-  function handleAssign() {
+  function openPanelForSelection(kind: "settings" | "subjects") {
     const chosen = arms.filter((arm) => selectedIds.includes(arm.id));
     if (chosen.length === 0) {
       toast.info("Tick at least one arm first.");
       return;
     }
     setPanelArms(chosen);
+    setPanelKind(kind);
     setPanelOpen(true);
+  }
+
+  // After the subjects of some arms changed, refresh everything that lists
+  // those subjects.
+  function handleSubjectsChanged(armIds: string[]) {
+    queryClient.invalidateQueries({ queryKey: TERM_SUBJECTS_KEY });
+    for (const armId of armIds) {
+      for (const queryKey of [
+        ["arm-subjects", armId],
+        ["student-offered-subjects", armId],
+        ["student-not-offered-subjects", armId],
+        ["arm-detail", armId],
+        ["broadsheet-arm-detail", armId],
+      ]) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    }
   }
 
   function renderContent() {
@@ -174,6 +188,9 @@ export default function ArmAssignmentsTab() {
           const locked = isArmLocked(arm.broadsheet);
           const detail = detailQueries[index];
           const assignments = detail?.data?.data;
+          const subjectCount = termSubjects.filter((subject) =>
+            subject.subject_arms.some((link) => link.arm.id === arm.id),
+          ).length;
 
           return (
             <article
@@ -236,6 +253,22 @@ export default function ArmAssignmentsTab() {
                       </div>
                     );
                   })}
+                  <div className="min-w-0">
+                    <dt className="text-[10px] text-slate-400">Subjects</dt>
+                    <dd
+                      className={`text-xs truncate ${
+                        subjectCount > 0 ? "text-slate-700" : "text-amber-600"
+                      }`}
+                    >
+                      {subjectsQuery.isPending
+                        ? "Loading…"
+                        : subjectsQuery.error
+                          ? "Unavailable"
+                          : subjectCount > 0
+                            ? `${subjectCount} offered`
+                            : "None offered"}
+                    </dd>
+                  </div>
                 </dl>
               )}
             </article>
@@ -249,18 +282,27 @@ export default function ArmAssignmentsTab() {
     <SlidePanelLayout
       panelOpen={panelOpen}
       panel={
-        <ArmAssignPanel
-          arms={panelArms}
-          onClose={() => setPanelOpen(false)}
-          onChanged={(armIds) => {
-            // Only the arms that were changed need their details reloaded.
-            for (const armId of armIds) {
-              queryClient.invalidateQueries({
-                queryKey: [...ARM_DETAIL_KEY, armId],
-              });
-            }
-          }}
-        />
+        panelKind === "settings" ? (
+          <ArmAssignPanel
+            arms={panelArms}
+            onClose={() => setPanelOpen(false)}
+            onChanged={(armIds) => {
+              // Only the arms that were changed need their details reloaded.
+              for (const armId of armIds) {
+                queryClient.invalidateQueries({
+                  queryKey: [...ARM_DETAIL_KEY, armId],
+                });
+              }
+            }}
+          />
+        ) : (
+          <ArmSubjectsPanel
+            arms={panelArms}
+            subjects={termSubjects}
+            onClose={() => setPanelOpen(false)}
+            onChanged={handleSubjectsChanged}
+          />
+        )
       }
     >
       <div className="pb-10">
@@ -268,7 +310,7 @@ export default function ArmAssignmentsTab() {
           title="Arm Settings"
           description={
             currentTerm
-              ? `${currentTerm.name} Term | ${currentTerm.session.name} Session. Tick the arms to configure, then assign settings.`
+              ? `${currentTerm.name} Term | ${currentTerm.session.name} Session. Tick the arms to configure, then assign settings or manage their subjects.`
               : "Choose the settings each class arm uses."
           }
           actionLabel={
@@ -276,9 +318,18 @@ export default function ArmAssignmentsTab() {
               ? `Assign settings (${selectedIds.length})`
               : "Assign settings"
           }
-          onAction={handleAssign}
+          onAction={() => openPanelForSelection("settings")}
           secondaryLabel={allSelected ? "Clear selection" : "Select all"}
           onSecondary={() => setSelectedIds(allSelected ? [] : selectableIds)}
+          extraActions={[
+            {
+              label:
+                selectedIds.length > 0
+                  ? `Manage subjects (${selectedIds.length})`
+                  : "Manage subjects",
+              onClick: () => openPanelForSelection("subjects"),
+            },
+          ]}
         />
         {renderContent()}
       </div>

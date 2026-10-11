@@ -19,10 +19,13 @@
 //   Assessment Formats  cognitive|affective|psychomotor-format/list/
 //                       (each family when it is first shown)
 //   Pass Rules          pass-rule/list/, subject-definition/list/ (editor)
+//   Subjects            subject-definition/list/, school/detail/ (current
+//                       term), subject/list/ for the current term
 //   School Calendar     session/list/, school/detail/, then each session's
 //                       terms when it is opened
 //   Arm Settings        school/detail/ (current term), arm/list/, arm/detail/
-//                       per arm, and the assignable lists when the panel opens
+//                       per arm, subject/list/ for the current term, and the
+//                       assignable lists when the panel opens
 //
 // A fetch that fails (for example a 403 for a section the user may not view)
 // is logged and passed down as null; that tab then loads its own data and shows
@@ -43,7 +46,7 @@ import { ConfigurationsProvider } from "./context/Configurationsprovider";
 export const metadata: Metadata = {
   title: "Configurations",
   description:
-    "Manage school policies, the school profile, grading, assessment formats, pass rules, the school calendar and arm settings.",
+    "Manage school policies, the school profile, grading, assessment formats, pass rules, subjects, the school calendar and arm settings.",
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────

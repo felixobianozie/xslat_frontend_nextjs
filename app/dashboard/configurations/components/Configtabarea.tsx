@@ -4,7 +4,7 @@
 // Configtabarea.tsx
 //
 // Tab bar and tab content for the Configurations page. Inline tabs from lg
-// upwards and a dropdown on smaller screens, so the seven tabs always fit. Only the active tab is mounted, so a tab fetches its data
+// upwards and a dropdown on smaller screens, so the eight tabs always fit. Only the active tab is mounted, so a tab fetches its data
 // the first time it is opened.
 //
 // The data was fetched on the server in page.tsx and lives in
@@ -21,6 +21,7 @@ import GradingFormatsTab from "./Gradingformatstab";
 import PassRulesTab from "./Passrulestab";
 import PoliciesTab from "./Policiestab";
 import SchoolProfileTab from "./Schoolprofiletab";
+import SubjectManagementTab from "./Subjectmanagementtab";
 
 const TAB_LABELS = [
   "School Policies",
@@ -28,6 +29,7 @@ const TAB_LABELS = [
   "Grading",
   "Assessment Formats",
   "Pass Rules",
+  "Subjects",
   "School Calendar",
   "Arm Settings",
 ];
@@ -136,8 +138,9 @@ export default function ConfigTabArea() {
       {activeTab === 2 && <GradingFormatsTab />}
       {activeTab === 3 && <AssessmentFormatsTab />}
       {activeTab === 4 && <PassRulesTab />}
-      {activeTab === 5 && <CalendarTab />}
-      {activeTab === 6 && <ArmAssignmentsTab />}
+      {activeTab === 5 && <SubjectManagementTab />}
+      {activeTab === 6 && <CalendarTab />}
+      {activeTab === 7 && <ArmAssignmentsTab />}
     </div>
   );
 }

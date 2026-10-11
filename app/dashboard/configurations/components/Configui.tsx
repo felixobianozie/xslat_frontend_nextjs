@@ -451,7 +451,12 @@ interface ListToolbarProps {
   // An optional second button, shown beside the main one with a plain look.
   secondaryLabel?: string;
   onSecondary?: () => void;
+  // Further plain buttons, shown between the second button and the main one.
+  extraActions?: { label: string; onClick: () => void }[];
 }
+
+const PLAIN_ACTION_CLASS =
+  "cursor-pointer flex items-center justify-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 hover:text-violet-700 transition-colors";
 
 // Heading row above each resource list, with an optional "create" button.
 export function ListToolbar({
@@ -461,6 +466,7 @@ export function ListToolbar({
   onAction,
   secondaryLabel,
   onSecondary,
+  extraActions,
 }: ListToolbarProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
@@ -473,11 +479,21 @@ export function ListToolbar({
           <button
             type="button"
             onClick={onSecondary}
-            className="cursor-pointer flex items-center justify-center gap-1.5 px-3 py-2 text-xs border border-slate-200 bg-white text-slate-600 rounded-xl hover:border-violet-300 hover:text-violet-700 transition-colors"
+            className={PLAIN_ACTION_CLASS}
           >
             <span>{secondaryLabel}</span>
           </button>
         )}
+        {extraActions?.map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            onClick={action.onClick}
+            className={PLAIN_ACTION_CLASS}
+          >
+            <span>{action.label}</span>
+          </button>
+        ))}
         {actionLabel && onAction && (
           <button
             type="button"

@@ -27,6 +27,9 @@ export const COGNITIVE_FORMATS_KEY = ["cognitive-formats", SCHOOL_ID];
 export const AFFECTIVE_FORMATS_KEY = ["affective-formats", SCHOOL_ID];
 export const PSYCHOMOTOR_FORMATS_KEY = ["psychomotor-formats", SCHOOL_ID];
 export const PASS_RULES_KEY = ["pass-rules", SCHOOL_ID];
+export const SUBJECT_DEFINITIONS_KEY = ["subject-definitions", SCHOOL_ID];
+// Followed by the term id: the subjects offered in one term.
+export const TERM_SUBJECTS_KEY = ["term-subjects", SCHOOL_ID];
 export const RESULT_TEMPLATES_KEY = ["result-templates", SCHOOL_ID];
 
 // ── Arm Settings ─────────────────────────────────────────────────────────────
