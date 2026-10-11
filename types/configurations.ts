@@ -311,3 +311,21 @@ export interface ArmAssignmentsData {
   pass_rule: NamedRef | null;
   result_template: NamedRef | null;
 }
+
+// ── Roles and permissions ────────────────────────────────────────────────────
+
+// A school role. `name` is the clean name without the school prefix and
+// `permissions` lists the codenames granted to the role.
+export interface RoleRecord {
+  id: number;
+  name: string;
+  permissions: string[];
+}
+
+// One entry of the permission catalogue.
+export interface PermissionRecord {
+  codename: string;
+  label: string;
+  category: string;
+  type: string;
+}

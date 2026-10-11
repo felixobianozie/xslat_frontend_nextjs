@@ -136,6 +136,44 @@ export function TextField({
   );
 }
 
+interface SearchFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+}
+
+// A search box. The label is read by screen readers only.
+export function SearchField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  className,
+}: SearchFieldProps) {
+  return (
+    <div className={className}>
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <input
+        id={id}
+        name={id}
+        type="search"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+          onChange(e.target.value)
+        }
+        className={`${INPUT_BASE} ${INPUT_OK}`}
+      />
+    </div>
+  );
+}
+
 interface TextAreaFieldProps {
   id: string;
   label: string;

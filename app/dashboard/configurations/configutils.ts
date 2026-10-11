@@ -5,6 +5,8 @@
 // Configurations tabs and editors.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { PermissionRecord } from "@/types/configurations";
+
 export const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
 // How long fetched data counts as fresh. A tab that is closed and opened again
@@ -31,6 +33,11 @@ export const SUBJECT_DEFINITIONS_KEY = ["subject-definitions", SCHOOL_ID];
 // Followed by the term id: the subjects offered in one term.
 export const TERM_SUBJECTS_KEY = ["term-subjects", SCHOOL_ID];
 export const RESULT_TEMPLATES_KEY = ["result-templates", SCHOOL_ID];
+export const ROLES_KEY = ["roles", SCHOOL_ID];
+// The permission catalogue is the same for every school.
+export const PERMISSION_CATALOGUE_KEY = ["permission-catalogue"];
+// Followed by the role name: how many staff hold the role.
+export const ROLE_MEMBERS_KEY = ["role-members", SCHOOL_ID];
 
 // ── Arm Settings ─────────────────────────────────────────────────────────────
 
@@ -166,4 +173,73 @@ export class SaveError extends Error {
     this.name = "SaveError";
     this.fieldErrors = fieldErrors ?? {};
   }
+}
+
+// ── Roles and permissions ────────────────────────────────────────────────────
+
+// The permission categories, in the order they are shown, with their labels. A
+// category the backend adds later is shown after these under its own name.
+const PERMISSION_CATEGORIES: { id: string; label: string }[] = [
+  { id: "iam", label: "Roles and access" },
+  { id: "staff", label: "Staff" },
+  { id: "student", label: "Students" },
+  { id: "school", label: "School" },
+  { id: "academics", label: "Academics" },
+  { id: "subject", label: "Subjects" },
+  { id: "score", label: "Scores" },
+  { id: "remark", label: "Remarks" },
+  { id: "result", label: "Results" },
+];
+
+export function categoryLabel(category: string): string {
+  const known = PERMISSION_CATEGORIES.find((item) => item.id === category);
+  if (known) return known.label;
+  if (!category) return "Other";
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+export interface PermissionGroup {
+  category: string;
+  label: string;
+  permissions: PermissionRecord[];
+}
+
+// Groups permissions by category, in the display order, keeping the order the
+// permissions arrived in inside each group.
+export function groupPermissionsByCategory(
+  permissions: PermissionRecord[],
+): PermissionGroup[] {
+  const byCategory = new Map<string, PermissionRecord[]>();
+  for (const permission of permissions) {
+    const list = byCategory.get(permission.category) ?? [];
+    list.push(permission);
+    byCategory.set(permission.category, list);
+  }
+
+  const knownIds = PERMISSION_CATEGORIES.map((item) => item.id);
+  const otherIds = Array.from(byCategory.keys()).filter(
+    (id) => !knownIds.includes(id),
+  );
+
+  return [...knownIds, ...otherIds]
+    .filter((id) => byCategory.has(id))
+    .map((id) => ({
+      category: id,
+      label: categoryLabel(id),
+      permissions: byCategory.get(id) ?? [],
+    }));
+}
+
+// True when the permission matches what was typed in a search box, by label or
+// by codename.
+export function permissionMatches(
+  permission: PermissionRecord,
+  search: string,
+): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    permission.label.toLowerCase().includes(needle) ||
+    permission.codename.toLowerCase().includes(needle)
+  );
 }
