@@ -13,6 +13,13 @@
 //     permissions of that category that are currently shown.
 //
 // The list is controlled: the editor owns the ticked codenames.
+//
+// Two optional props serve the Staff page, where the list stands for permissions
+// to give to or take from staff:
+//   • `locked` codenames show ticked and cannot be changed. They are left out
+//     of the counters and of "Select all".
+//   • `notes` adds a short line under a permission, for example how many of the
+//     selected staff already have it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -25,6 +32,10 @@ import { SearchField } from "./Configui";
 interface PermissionChecklistProps {
   catalogue: PermissionRecord[];
   selected: string[];
+  // Codenames shown ticked and fixed.
+  locked?: string[];
+  // Extra line under a permission, by codename.
+  notes?: Record<string, string>;
   onChange: (codenames: string[]) => void;
   disabled?: boolean;
 }
@@ -32,10 +43,17 @@ interface PermissionChecklistProps {
 export default function PermissionChecklist({
   catalogue,
   selected,
+  locked = [],
+  notes = {},
   onChange,
   disabled,
 }: PermissionChecklistProps) {
   const [search, setSearch] = useState("");
+
+  // The permissions that can be ticked or cleared.
+  const changeableCount = catalogue.filter(
+    (permission) => !locked.includes(permission.codename),
+  ).length;
 
   const visibleGroups = groupPermissionsByCategory(
     catalogue.filter((permission) => permissionMatches(permission, search)),
@@ -50,9 +68,11 @@ export default function PermissionChecklist({
   }
 
   // Ticks every shown permission of a category, or clears them when they are
-  // all ticked already.
+  // all ticked already. Locked permissions are not part of it.
   function toggleCategory(permissions: PermissionRecord[]) {
-    const codenames = permissions.map((permission) => permission.codename);
+    const codenames = permissions
+      .filter((permission) => !locked.includes(permission.codename))
+      .map((permission) => permission.codename);
     const allTicked = codenames.every((codename) =>
       selected.includes(codename),
     );
@@ -79,10 +99,10 @@ export default function PermissionChecklist({
         />
         <span
           aria-live="polite"
-          aria-label={`${selected.length} of ${catalogue.length} permissions ticked`}
+          aria-label={`${selected.length} of ${changeableCount} permissions ticked`}
           className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium tabular-nums text-slate-600"
         >
-          {selected.length}/{catalogue.length}
+          {selected.length}/{changeableCount}
         </span>
       </div>
 
@@ -93,10 +113,14 @@ export default function PermissionChecklist({
         />
       ) : (
         visibleGroups.map((group) => {
-          const tickedCount = group.permissions.filter((permission) =>
+          const changeable = group.permissions.filter(
+            (permission) => !locked.includes(permission.codename),
+          );
+          const tickedCount = changeable.filter((permission) =>
             selected.includes(permission.codename),
           ).length;
-          const allTicked = tickedCount === group.permissions.length;
+          const allTicked =
+            changeable.length > 0 && tickedCount === changeable.length;
 
           return (
             <section
@@ -107,13 +131,13 @@ export default function PermissionChecklist({
                 <h3 className="text-xs font-semibold text-slate-700">
                   {group.label}{" "}
                   <span className="font-normal tabular-nums text-slate-400">
-                    {tickedCount}/{group.permissions.length}
+                    {tickedCount}/{changeable.length}
                   </span>
                 </h3>
                 <button
                   type="button"
                   onClick={() => toggleCategory(group.permissions)}
-                  disabled={disabled}
+                  disabled={disabled || changeable.length === 0}
                   className="cursor-pointer shrink-0 text-xs text-violet-700 hover:text-violet-800 disabled:opacity-50"
                 >
                   {allTicked ? "Clear" : "Select all"}
@@ -121,27 +145,44 @@ export default function PermissionChecklist({
               </header>
 
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 p-2">
-                {group.permissions.map((permission) => (
-                  <li key={permission.codename}>
-                    <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-slate-50">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(permission.codename)}
-                        disabled={disabled}
-                        onChange={() => toggle(permission.codename)}
-                        className="mt-0.5 h-4 w-4 shrink-0 accent-violet-600"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-xs text-slate-800">
-                          {permission.label}
+                {group.permissions.map((permission) => {
+                  const isLocked = locked.includes(permission.codename);
+
+                  return (
+                    <li key={permission.codename}>
+                      <label
+                        className={`flex items-start gap-2.5 rounded-lg px-2 py-1.5 ${
+                          isLocked
+                            ? "cursor-not-allowed opacity-60"
+                            : "cursor-pointer hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            isLocked || selected.includes(permission.codename)
+                          }
+                          disabled={disabled || isLocked}
+                          onChange={() => toggle(permission.codename)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-violet-600"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-xs text-slate-800">
+                            {permission.label}
+                          </span>
+                          <span className="block truncate text-[10px] text-slate-400">
+                            {permission.codename}
+                          </span>
+                          {notes[permission.codename] && (
+                            <span className="block text-[10px] text-slate-500">
+                              {notes[permission.codename]}
+                            </span>
+                          )}
                         </span>
-                        <span className="block truncate text-[10px] text-slate-400">
-                          {permission.codename}
-                        </span>
-                      </span>
-                    </label>
-                  </li>
-                ))}
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           );

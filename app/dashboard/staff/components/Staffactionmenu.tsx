@@ -6,6 +6,7 @@
 // A three-dot button that opens a contextual dropdown with actions for a
 // staff portfolio row:
 //   View Profile        (navigates to /dashboard/staff-profile?id=...)
+//   Roles & Permissions (opens the assignment panel for this staff member)
 //   Invitation actions  — only for staff whose invitation has not been
 //                         accepted (inviteState is not null):
 //                           Resend Invitation   always
@@ -24,13 +25,22 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal, Eye, Send, Mail, Ban, Trash2 } from "lucide-react";
+import {
+  MoreHorizontal,
+  Eye,
+  Send,
+  Mail,
+  Ban,
+  Trash2,
+  ShieldCheck,
+} from "lucide-react";
 
 interface StaffActionMenuProps {
   portfolioId: string;
   /** The staff member's invitation state; null when there is no open invitation. */
   inviteState: InviteState | null;
   onViewProfile: () => void;
+  onAssignRoles: () => void;
   onResendInvite: () => void;
   onChangeInviteEmail: () => void;
   onRevokeInvite: () => void;
@@ -44,6 +54,7 @@ export default function StaffActionMenu({
   portfolioId,
   inviteState,
   onViewProfile,
+  onAssignRoles,
   onResendInvite,
   onChangeInviteEmail,
   onRevokeInvite,
@@ -152,6 +163,14 @@ export default function StaffActionMenu({
               label="View Profile"
               onClick={() => {
                 onViewProfile();
+                setOpen(false);
+              }}
+            />
+            <MenuItem
+              icon={<ShieldCheck size={13} />}
+              label="Roles & Permissions"
+              onClick={() => {
+                onAssignRoles();
                 setOpen(false);
               }}
             />

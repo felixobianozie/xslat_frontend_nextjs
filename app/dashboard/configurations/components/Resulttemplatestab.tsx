@@ -4,14 +4,9 @@
 // Resulttemplatestab.tsx
 //
 // Lists the result templates this school can use (GET result-template/list/):
-// its own school-specific templates plus every universal template.
-//
-// The list response leaves out each template's description and config, so the
-// tab also requests result-template/detail/ for every template and keeps the
-// result together with the list item. page.tsx does the same on the server and
-// the combined list is read from ConfigurationsProvider as `initialData`. A template whose detail could
-// not be read (a universal template, for anyone but a platform superuser) has
-// `detail: null` and cannot be edited.
+// its own school-specific templates plus every universal template. Each list
+// item carries the template's description and config, so editing needs no
+// further request.
 //
 // Universal templates belong to the platform, so only a platform superuser
 // (is_superuser claim in the session) gets an Edit button on them. The
@@ -22,19 +17,15 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe, Pencil } from "lucide-react";
-import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type {
   ApiEnvelope,
-  ResultTemplateDetail,
   ResultTemplateListItem,
-  ResultTemplateRecord,
 } from "@/types/configurations";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
-import { formatDate } from "../configutils";
-import { useConfigurations } from "../context/Configurationsprovider";
+import { QUERY_STALE_MS, formatDate } from "../configutils";
 import { ErrorNotice, ListToolbar, StatusPill } from "./Configui";
 import SlidePanelLayout from "./Slidepanellayout";
 import ResultTemplateEditor from "./Resulttemplateeditor";
@@ -43,8 +34,6 @@ import ResultTemplateEditor from "./Resulttemplateeditor";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
-// How long server-fetched data counts as fresh before a refetch is allowed.
-const INITIAL_DATA_STALE_MS = 60 * 1000;
 const RESULT_TEMPLATES_KEY = ["result-templates", SCHOOL_ID];
 
 // Cached arm and broadsheet details that embed result templates.
@@ -53,20 +42,18 @@ const ARM_CACHE_KEYS = [["arm-detail"], ["broadsheet-arm-detail"]];
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function ResultTemplatesTab() {
-  // Server-fetched templates with their details. Null when the list fetch failed.
-  const { resultTemplates: initialData } = useConfigurations();
   const queryClient = useQueryClient();
   const { clientAuthFetch } = useClientAuthFetch();
   const { data: session } = useSession();
   const isSuperuser = session?.accessClaims?.is_superuser === true;
 
-  // The record being edited (null = creating a new one). It is kept after the
-  // panel closes so the panel still has its content while it slides out.
-  const [editing, setEditing] = useState<ResultTemplateRecord | null>(null);
+  // The template being edited (null = creating a new one). It is kept after
+  // the panel closes so the panel still has its content while it slides out.
+  const [editing, setEditing] = useState<ResultTemplateListItem | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  function openEditor(record: ResultTemplateRecord | null) {
-    setEditing(record);
+  function openEditor(template: ResultTemplateListItem | null) {
+    setEditing(template);
     setPanelOpen(true);
   }
 
@@ -75,42 +62,17 @@ export default function ResultTemplatesTab() {
   }
 
   const { data, isPending, error, refetch } = useQuery<
-    ApiEnvelope<ResultTemplateRecord[]>
+    ApiEnvelope<ResultTemplateListItem[]>
   >({
     queryKey: RESULT_TEMPLATES_KEY,
     queryFn: async () => {
-      const list = await clientAuthFetch<ApiEnvelope<ResultTemplateListItem[]>>(
-        `result-template/list/?school-id=${SCHOOL_ID}`,
-      );
-      if (list.error || !list.data) {
-        throw new Error(list.error?.message ?? "Could not load templates.");
-      }
-
-      // One detail request per template, in parallel. A failed request leaves
-      // that template's `detail` as null instead of failing the whole list.
-      const records: ResultTemplateRecord[] = await Promise.all(
-        list.data.data.map(async (item) => {
-          const detail = await clientAuthFetch<
-            ApiEnvelope<ResultTemplateDetail>
-          >(`result-template/detail/?id=${item.id}`);
-          return {
-            ...item,
-            detail: detail.data
-              ? {
-                  description: detail.data.data.description,
-                  config: detail.data.data.config,
-                  modified_on: detail.data.data.modified_on,
-                }
-              : null,
-          };
-        }),
-      );
-
-      return { message: list.data.message, data: records };
+      const { data, error } = await clientAuthFetch<
+        ApiEnvelope<ResultTemplateListItem[]>
+      >(`result-template/list/?school-id=${SCHOOL_ID}`);
+      if (error) throw new Error(error.message);
+      return data!;
     },
-    initialData: initialData ?? undefined,
-    // Treat the server-fetched data as fresh so it is not refetched on mount.
-    staleTime: INITIAL_DATA_STALE_MS,
+    staleTime: QUERY_STALE_MS,
   });
 
   function handleSaved() {
@@ -119,17 +81,6 @@ export default function ResultTemplatesTab() {
       queryClient.invalidateQueries({ queryKey });
     }
     closeEditor();
-  }
-
-  function handleEdit(template: ResultTemplateRecord) {
-    // Without its detail the form would show an empty description and config.
-    if (!template.detail) {
-      toast.error(
-        "This template's details could not be loaded. Refresh the page and try again.",
-      );
-      return;
-    }
-    openEditor(template);
   }
 
   const templates = data?.data ?? [];
@@ -211,7 +162,7 @@ export default function ResultTemplatesTab() {
                       {canEdit && (
                         <button
                           type="button"
-                          onClick={() => handleEdit(template)}
+                          onClick={() => openEditor(template)}
                           className="cursor-pointer flex items-center gap-1 px-3 py-1.5 text-xs border border-slate-200 rounded-xl text-slate-600 hover:border-violet-300 hover:text-violet-700 transition-colors"
                         >
                           <Pencil size={11} /> Edit

@@ -11,9 +11,8 @@
 // changes afterwards. New templates are always school-specific — a universal
 // template can only be created by a platform superuser.
 //
-// When editing, the template arrives with its full detail (description and
-// config), already loaded by the Result Templates tab. On edit only the
-// fields that changed are sent.
+// When editing, the template arrives as a list item, which already carries its
+// description and config. On edit only the fields that changed are sent.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -23,7 +22,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type {
   ApiEnvelope,
-  ResultTemplateRecord,
+  ResultTemplateListItem,
 } from "@/types/configurations";
 import {
   SaveError,
@@ -55,7 +54,7 @@ interface FormState {
   active: boolean;
 }
 
-function toFormState(template: ResultTemplateRecord | null): FormState {
+function toFormState(template: ResultTemplateListItem | null): FormState {
   if (!template) {
     return {
       name: "",
@@ -69,9 +68,9 @@ function toFormState(template: ResultTemplateRecord | null): FormState {
   return {
     name: template.name,
     templateKey: template.template_key,
-    description: template.detail?.description ?? "",
+    description: template.description,
     previewImageUrl: template.preview_image_url,
-    configText: JSON.stringify(template.detail?.config ?? {}, null, 2),
+    configText: JSON.stringify(template.config, null, 2),
     active: template.is_active,
   };
 }
@@ -83,7 +82,11 @@ function parseConfig(text: string): {
 } {
   try {
     const parsed: unknown = JSON.parse(text.trim() === "" ? "{}" : text);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
       return { error: "Config must be a JSON object, e.g. {}" };
     }
     return { value: parsed as Record<string, unknown> };
@@ -93,8 +96,8 @@ function parseConfig(text: string): {
 }
 
 interface ResultTemplateEditorProps {
-  // null creates a template; a record edits that template.
-  template: ResultTemplateRecord | null;
+  // null creates a template; a list item edits that template.
+  template: ResultTemplateListItem | null;
   onClose: () => void;
   // Called after a successful save; the tab refreshes its list and closes.
   onSaved: () => void;

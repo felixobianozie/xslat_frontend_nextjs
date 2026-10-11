@@ -15,6 +15,15 @@
 //    Invitation (see Staffactionmenu.tsx). Resend is a direct action here;
 //    Change Email and Revoke open StaffInviteDialog.
 //
+// Roles & permissions:
+//  - Every row and card has a checkbox, and the table header has one that
+//    ticks every staff member shown on the page. The selection survives page
+//    changes and filter changes until it is cleared.
+//  - While anyone is selected, a bar above the list shows how many and offers
+//    "Roles & Permissions", which opens StaffRolesPanel for all of them.
+//  - A row's menu offers the same panel for that one staff member, without
+//    touching the selection.
+//
 // Data layer:
 //  - initialData is the full server-fetched paginated envelope for page 1.
 //    total_pages, count, and data all come directly from the server — no
@@ -44,6 +53,7 @@ import {
   UserPlus,
   BadgeCheck,
   BadgeX,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
@@ -51,10 +61,12 @@ import StaffActionMenu from "./Staffactionmenu";
 import StaffCreatePanel from "./Staffcreatepanel";
 import StaffInviteDialog from "./Staffinvitedialog";
 import StaffPrintTemplate from "./Staffprinttemplate";
+import StaffRolesPanel from "./Staffrolespanel";
 import Paginator, { PAGE_SIZE } from "../../components/Paginator";
 import EmptyState from "../../components/Emptystate";
 import type { PaginatedResponse } from "../page";
 import TableLoader from "../../components/Tableloader";
+import TriStateCheckbox from "../../components/Tristatecheckbox";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +170,18 @@ export default function StaffList({ initialData }: StaffListProps) {
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // The ticked staff members, by portfolio id. The records are kept so the
+  // roles panel can name people who are on another page.
+  const [selected, setSelected] = useState<Record<string, StaffPortfolio>>({});
+  // The roles & permissions panel. `session` changes on every opening so the
+  // panel starts fresh; `fromSelection` says whether it was opened for the
+  // ticked staff or for one row.
+  const [rolesPanel, setRolesPanel] = useState<{
+    show: boolean;
+    session: number;
+    targets: StaffPortfolio[];
+    fromSelection: boolean;
+  }>({ show: false, session: 0, targets: [], fromSelection: false });
   // The invitation dialog being shown (change email / revoke), if any
   const [inviteDialog, setInviteDialog] = useState<{
     kind: "email" | "revoke";
@@ -284,6 +308,48 @@ export default function StaffList({ initialData }: StaffListProps) {
     queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
   }
 
+  // ── Selection ──────────────────────────────────────────────────────────────
+  const selectedCount = Object.keys(selected).length;
+  const selectedOnPage = visiblePortfolios.filter(
+    (portfolio) => portfolio.id in selected,
+  ).length;
+  const allOnPageSelected =
+    visiblePortfolios.length > 0 && selectedOnPage === visiblePortfolios.length;
+
+  function toggleSelected(portfolio: StaffPortfolio) {
+    setSelected((previous) => {
+      const next = { ...previous };
+      if (portfolio.id in next) delete next[portfolio.id];
+      else next[portfolio.id] = portfolio;
+      return next;
+    });
+  }
+
+  // Ticks every staff member shown, or clears them when all are ticked.
+  function toggleAllOnPage() {
+    setSelected((previous) => {
+      const next = { ...previous };
+      for (const portfolio of visiblePortfolios) {
+        if (allOnPageSelected) delete next[portfolio.id];
+        else next[portfolio.id] = portfolio;
+      }
+      return next;
+    });
+  }
+
+  function openRolesPanel(targets: StaffPortfolio[], fromSelection: boolean) {
+    setRolesPanel((previous) => ({
+      show: true,
+      session: previous.session + 1,
+      targets,
+      fromSelection,
+    }));
+  }
+
+  function closeRolesPanel() {
+    setRolesPanel((previous) => ({ ...previous, show: false }));
+  }
+
   // ── Resend invitation ──────────────────────────────────────────────────────
   // Gives the invitation a new code and a fresh 24-hour expiry, reactivates the
   // portfolio if it was revoked, and emails the invitation again.
@@ -326,6 +392,7 @@ export default function StaffList({ initialData }: StaffListProps) {
         onViewProfile={() =>
           router.push(`/dashboard/staff-profile?id=${portfolio.id}`)
         }
+        onAssignRoles={() => openRolesPanel([portfolio], false)}
         onResendInvite={() => resendInvite(portfolio.id)}
         onChangeInviteEmail={() =>
           setInviteDialog({ kind: "email", portfolio })
@@ -362,7 +429,9 @@ export default function StaffList({ initialData }: StaffListProps) {
         {/* ── Main list panel ─────────────────────────────────────────────── */}
         <div
           className={`transition-all duration-500 ease-in-out overflow-hidden ${
-            showCreatePanel ? "w-0 opacity-0 h-0" : "w-full opacity-100"
+            showCreatePanel || rolesPanel.show
+              ? "w-0 opacity-0 h-0"
+              : "w-full opacity-100"
           }`}
         >
           {/* ── Toolbar ───────────────────────────────────────────────────── */}
@@ -452,6 +521,36 @@ export default function StaffList({ initialData }: StaffListProps) {
             </div>
           </div>
 
+          {/* ── Selection bar — shown while any staff member is ticked ─────── */}
+          {selectedCount > 0 && (
+            <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-violet-800">
+                <span className="font-semibold tabular-nums">
+                  {selectedCount}
+                </span>{" "}
+                {selectedCount === 1 ? "staff member" : "staff members"}{" "}
+                selected
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelected({})}
+                  className="cursor-pointer px-3 py-2 text-xs border border-violet-200 bg-white text-violet-700 rounded-xl hover:bg-violet-100 transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openRolesPanel(Object.values(selected), true)}
+                  className="cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
+                >
+                  <ShieldCheck size={12} />
+                  <span>Roles &amp; Permissions</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Loading state — skeleton rows while there is no data yet ─────── */}
           {isPending ? (
             <TableLoader rows={6} className="my-4" />
@@ -462,6 +561,15 @@ export default function StaffList({ initialData }: StaffListProps) {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-slate-100 text-left text-slate-500 border-b border-slate-200">
+                      <th className="w-10 pl-5 pr-0 py-3">
+                        <TriStateCheckbox
+                          checked={allOnPageSelected}
+                          indeterminate={selectedOnPage > 0}
+                          onChange={toggleAllOnPage}
+                          disabled={visiblePortfolios.length === 0}
+                          ariaLabel="Select all staff on this page"
+                        />
+                      </th>
                       <th className="px-5 py-3 font-semibold">Staff</th>
                       <th className="px-5 py-3 font-semibold">Email</th>
                       <th className="px-5 py-3 font-semibold">Phone</th>
@@ -480,7 +588,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                   <tbody className="bg-white divide-y divide-slate-50">
                     {visiblePortfolios.length === 0 ? (
                       <tr>
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           <EmptyState
                             variant={searchQuery ? "search" : "staff"}
                             title={
@@ -503,9 +611,22 @@ export default function StaffList({ initialData }: StaffListProps) {
                           <tr
                             key={portfolio.id}
                             className={`h-14 hover:bg-violet-50/40 transition-colors cursor-pointer ${
-                              index % 2 === 0 ? "bg-white" : "bg-indigo-50/30"
+                              portfolio.id in selected
+                                ? "bg-violet-50/70"
+                                : index % 2 === 0
+                                  ? "bg-white"
+                                  : "bg-indigo-50/30"
                             }`}
                           >
+                            {/* Select */}
+                            <td className="w-10 pl-5 pr-0">
+                              <TriStateCheckbox
+                                checked={portfolio.id in selected}
+                                onChange={() => toggleSelected(portfolio)}
+                                ariaLabel={`Select ${user.first_name} ${user.last_name}`}
+                              />
+                            </td>
+
                             {/* Name + ID */}
                             <td className="px-5">
                               <div className="flex flex-col">
@@ -607,6 +728,16 @@ export default function StaffList({ initialData }: StaffListProps) {
 
               {/* ── Mobile card list ────────────────────────────────────── */}
               <div className="flex flex-col gap-3 md:hidden my-4">
+                {visiblePortfolios.length > 0 && (
+                  <label className="flex items-center gap-2.5 px-1 text-xs text-slate-600 cursor-pointer w-fit">
+                    <TriStateCheckbox
+                      checked={allOnPageSelected}
+                      indeterminate={selectedOnPage > 0}
+                      onChange={toggleAllOnPage}
+                    />
+                    <span>Select all on this page</span>
+                  </label>
+                )}
                 {visiblePortfolios.length === 0 ? (
                   <EmptyState
                     variant={searchQuery ? "search" : "staff"}
@@ -618,11 +749,20 @@ export default function StaffList({ initialData }: StaffListProps) {
                     return (
                       <div
                         key={portfolio.id}
-                        className="bg-white border border-indigo-100 rounded-2xl overflow-hidden shadow-sm"
+                        className={`border rounded-2xl overflow-hidden shadow-sm ${
+                          portfolio.id in selected
+                            ? "bg-violet-50/40 border-violet-300"
+                            : "bg-white border-indigo-100"
+                        }`}
                       >
                         {/* Card header */}
-                        <div className="flex items-center justify-between p-4 border-b border-slate-50">
-                          <div className="flex flex-col min-w-0">
+                        <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-50">
+                          <TriStateCheckbox
+                            checked={portfolio.id in selected}
+                            onChange={() => toggleSelected(portfolio)}
+                            ariaLabel={`Select ${user.first_name} ${user.last_name}`}
+                          />
+                          <div className="flex flex-col min-w-0 flex-1">
                             {/* Name with the invitation badge on the same line */}
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-sm font-semibold text-slate-800 truncate">
@@ -704,6 +844,19 @@ export default function StaffList({ initialData }: StaffListProps) {
         <StaffCreatePanel
           show={showCreatePanel}
           onClose={handleCreatePanelClose}
+        />
+
+        {/* ── Roles & permissions slide-in panel ───────────────────────── */}
+        <StaffRolesPanel
+          show={rolesPanel.show}
+          session={rolesPanel.session}
+          targets={rolesPanel.targets}
+          onClose={closeRolesPanel}
+          onApplied={() => {
+            closeRolesPanel();
+            // Staff that were ticked for this change are done with.
+            if (rolesPanel.fromSelection) setSelected({});
+          }}
         />
       </div>
 
