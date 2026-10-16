@@ -20,6 +20,10 @@ export const QUERY_STALE_MS = 5 * 60 * 1000;
 export const SCHOOL_KEY = ["school", SCHOOL_ID];
 export const ARMS_KEY = ["arms", SCHOOL_ID];
 export const ARM_DETAIL_KEY = ["arm-detail"];
+// Followed by the term id: the sections of one term.
+export const SECTIONS_KEY = ["structure-sections", SCHOOL_ID];
+// Followed by the section id: the levels of one section.
+export const LEVELS_KEY = ["structure-levels", SCHOOL_ID];
 
 export const SESSIONS_KEY = ["calendar-sessions", SCHOOL_ID];
 export const TERMS_KEY = ["calendar-terms", SCHOOL_ID];
@@ -242,4 +246,62 @@ export function permissionMatches(
     permission.label.toLowerCase().includes(needle) ||
     permission.codename.toLowerCase().includes(needle)
   );
+}
+
+// ── School structure forms ───────────────────────────────────────────────────
+
+// The backend reports a clash with another record (for example a duplicate
+// name) under this key instead of under a field.
+export function nonFieldMessage(fieldErrors: FieldErrors): string | undefined {
+  return fieldMessage(fieldErrors, "non_field_errors");
+}
+
+// A required text field: not empty and not longer than the database allows.
+export function textError(
+  value: string,
+  label: string,
+  maxLength: number,
+): string | undefined {
+  const text = value.trim();
+  if (!text) return `Enter ${label}.`;
+  if (text.length > maxLength) return `Maximum ${maxLength} characters.`;
+  return undefined;
+}
+
+// An abbreviation: no spaces, and not longer than the database allows. A blank
+// one is an error only when `required` is set.
+export function abbrError(
+  value: string,
+  required: boolean,
+  maxLength = 20,
+): string | undefined {
+  const text = value.trim();
+  if (!text) return required ? "Enter an abbreviation." : undefined;
+  if (/\s/.test(text)) return "No spaces. Use underscores instead.";
+  if (text.length > maxLength) return `Maximum ${maxLength} characters.`;
+  return undefined;
+}
+
+// A whole number of zero or more, entered as text.
+export function wholeNumberError(
+  value: string,
+  label: string,
+): string | undefined {
+  const text = value.trim();
+  if (!text) return `Enter ${label}.`;
+  if (!/^\d+$/.test(text)) return "Enter a whole number, 0 or more.";
+  return undefined;
+}
+
+// Names and abbreviations are compared ignoring case and surrounding spaces,
+// because the backend capitalises them before checking they are unique.
+export function sameText(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+// ISO dates (YYYY-MM-DD) sort the same as text, so they can be compared
+// directly. True when `ends` is a day after `starts`, or either is empty.
+export function endsAfterStart(starts: string, ends: string): boolean {
+  if (!starts || !ends) return true;
+  return ends > starts;
 }

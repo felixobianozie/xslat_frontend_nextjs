@@ -3,10 +3,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Configtabarea.tsx
 //
-// Tab bar and tab content for the Configurations page. Inline tabs from xl
-// upwards and a dropdown on smaller screens, so the nine tabs always fit. Only
-// the active tab is mounted, so a tab fetches its data the first time it is
-// opened.
+// Tab bar and tab content for the Configurations page. Inline tabs from 1440px
+// upwards and a dropdown below that. The ten tabs need about 1060px, and the
+// sidebar and page margins take another 240px, so the inline bar needs a
+// viewport of at least 1300px; 1440px leaves room to spare. Only the active tab
+// is mounted, so a tab fetches its data the first time it is opened.
 //
 // The data was fetched on the server in page.tsx and lives in
 // ConfigurationsProvider; each tab reads the slice it needs from there.
@@ -23,6 +24,7 @@ import PassRulesTab from "./Passrulestab";
 import PoliciesTab from "./Policiestab";
 import RolesAndPermissionsTab from "./Rolesandpermissionstab";
 import SchoolProfileTab from "./Schoolprofiletab";
+import SchoolStructureTab from "./Schoolstructuretab";
 import SubjectManagementTab from "./Subjectmanagementtab";
 
 const TAB_LABELS = [
@@ -33,6 +35,7 @@ const TAB_LABELS = [
   "Pass Rules",
   "Subjects",
   "School Calendar",
+  "School Structure",
   "Arm Settings",
   "Roles & Permissions",
 ];
@@ -64,7 +67,7 @@ export default function ConfigTabArea() {
     <div>
       <div className="relative border-b border-indigo-400 h-10 mb-6">
         {/* Desktop: inline tab buttons */}
-        <div className="hidden xl:flex absolute -bottom-0.5 left-0">
+        <div className="hidden min-[1440px]:flex absolute -bottom-0.5 left-0">
           {TAB_LABELS.map((label, index) => (
             <button
               key={label}
@@ -84,7 +87,7 @@ export default function ConfigTabArea() {
         {/* Mobile: dropdown picker */}
         <div
           ref={mobileDropdownRef}
-          className="xl:hidden absolute right-0 bottom-1"
+          className="min-[1440px]:hidden absolute right-0 bottom-1"
         >
           <button
             type="button"
@@ -129,7 +132,7 @@ export default function ConfigTabArea() {
         </div>
 
         {/* Mobile: active tab name underlined on the left */}
-        <div className="xl:hidden absolute -bottom-0.5 left-0">
+        <div className="min-[1440px]:hidden absolute -bottom-0.5 left-0">
           <span className="block text-sm font-medium text-slate-700 border-b-[3px] border-b-red-700 pb-2 px-1">
             {activeLabel}
           </span>
@@ -143,8 +146,9 @@ export default function ConfigTabArea() {
       {activeTab === 4 && <PassRulesTab />}
       {activeTab === 5 && <SubjectManagementTab />}
       {activeTab === 6 && <CalendarTab />}
-      {activeTab === 7 && <ArmAssignmentsTab />}
-      {activeTab === 8 && <RolesAndPermissionsTab />}
+      {activeTab === 7 && <SchoolStructureTab />}
+      {activeTab === 8 && <ArmAssignmentsTab />}
+      {activeTab === 9 && <RolesAndPermissionsTab />}
     </div>
   );
 }

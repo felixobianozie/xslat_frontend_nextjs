@@ -329,3 +329,26 @@ export interface PermissionRecord {
   category: string;
   type: string;
 }
+
+// ── School structure ─────────────────────────────────────────────────────────
+
+// A section of a term (for example Junior Secondary), as returned by
+// section/list/. `terminal` marks the school's final section: students graduate
+// when they finish the final level of the final section.
+export interface SectionRecord {
+  id: string;
+  name: string;
+  abbr: string;
+  promotion_order: number;
+  terminal: boolean;
+}
+
+// A level of a section (for example Year 1), as returned by level/list/.
+// `terminal` marks the final level of its section.
+export interface LevelRecord {
+  id: string;
+  name: string;
+  abbr: string;
+  promotion_order: number;
+  terminal: boolean;
+}

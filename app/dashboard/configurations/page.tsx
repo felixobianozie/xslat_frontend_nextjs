@@ -23,6 +23,8 @@
 //                       term), subject/list/ for the current term
 //   School Calendar     session/list/, school/detail/, then each session's
 //                       terms when it is opened
+//   School Structure    school/detail/ (current term), section/list/,
+//                       level/list/ per section, arm/list/
 //   Arm Settings        school/detail/ (current term), arm/list/, arm/detail/
 //                       per arm, subject/list/ for the current term, and the
 //                       assignable lists when the panel opens
@@ -48,7 +50,7 @@ import { ConfigurationsProvider } from "./context/Configurationsprovider";
 export const metadata: Metadata = {
   title: "Configurations",
   description:
-    "Manage school policies, the school profile, grading, assessment formats, pass rules, subjects, the school calendar, arm settings and roles and permissions.",
+    "Manage school policies, the school profile, grading, assessment formats, pass rules, subjects, the school calendar, the school structure, arm settings and roles and permissions.",
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
