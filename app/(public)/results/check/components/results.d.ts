@@ -3,18 +3,21 @@
 //
 // Types for the /results check-student-result flow.
 //
-// These mirror the shape returned by
-//   POST academics/student/result/check/
-// once the CheckStudentResultView is extended (planned as the second delivery)
-// to include the arm's assessment configuration and grading formats —
-// everything a result template needs to render itself faithfully.
+// These describe everything a result template needs to render itself
+// faithfully: the response of
+//   POST /api/v1/student/result/check/
+// combined with the arm's assessment configuration, grading formats and
+// school details from
+//   GET /api/v1/student/result/context/
+// by `mergeResultAndContext` in ../page.tsx.
 //
 // Design note:
 //   The check response reuses the shape produced by compute_results() (see
-//   backend results_aggregation.py) plus the academic-context enrichment
-//   (arm / level / section / term / session / school). The templates only
-//   need to know about these types — they never fetch anything themselves,
-//   they just receive `StudentResultResponse` as a prop.
+//   backend results_aggregation.py); the academic context (arm / level /
+//   section / term / session / school) comes from the context endpoint.
+//   The templates only need to know about these types — they never fetch
+//   anything themselves, they just receive `StudentResultResponse` as a
+//   prop.
 //
 //   Because the same template components are reusable inside the broadsheet
 //   "print student results" flow, the shape here is deliberately independent

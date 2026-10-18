@@ -32,7 +32,7 @@ import SeniorDefaultA4V1 from "./SeniorDefaultA4V1";
 // the backend's ResultTemplate rows for each active template. If the
 // backend seed changes, update these keys accordingly.
 //
-// Current DB entries (as of the last sync):
+// Template names seeded on the backend for these keys:
 //   junior-default-a4v1 → "JUNIOR DEFAULT A4V1"
 //   senior-default-a4v1 → "SENIOR DEFAULT A4V1"
 export const TEMPLATE_REGISTRY: Record<
