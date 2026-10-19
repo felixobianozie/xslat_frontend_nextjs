@@ -107,15 +107,12 @@ export interface ResultArm extends ResultAcademicRef {
 
 // ── Teacher record (from the result context endpoint) ───────────────────────
 
-// Flat teacher shape returned by /academics/student/result/context/ and
-// merged onto each subject row on the frontend. `public_id` is the human
-// identifier the templates render in the Teacher ID column (e.g. "TCH-014").
+// Teacher shape returned by /api/v1/student/result/context/ and merged onto
+// each subject row on the frontend. The endpoint is public, so it returns the
+// public identifier only. `public_id` is what the templates render in the
+// Teacher ID column (e.g. "TCH-014").
 export interface TeacherRef {
-  id: string;
   public_id: string;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
 }
 
 // ── Per-subject / per-trait / per-skill rows ─────────────────────────────────
@@ -206,7 +203,7 @@ export interface CheckStudentResultResponse {
 }
 
 // ── Context endpoint response ────────────────────────────────────────────────
-// This is what /academics/student/result/context/ returns. It carries the
+// This is what /api/v1/student/result/context/ returns. It carries the
 // arm's assessment/grading configuration, the school with address parts,
 // and the arm's subject-teacher assignments. The response is stable per
 // arm and can be cached aggressively.
@@ -217,7 +214,6 @@ export interface CheckStudentResultResponse {
 export interface ContextSubjectArm {
   subject_arm_id: string;
   display_order: number;
-  offered: boolean;
   subject: {
     id: string;
     definition_id: string;

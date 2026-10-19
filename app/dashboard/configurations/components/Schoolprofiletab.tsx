@@ -23,8 +23,9 @@
 // did not return never blocks saving another one.
 //
 // Name, abbreviation, address, city, LGA, state and country appear on result
-// sheets. The backend refuses to change them once any arm has a submitted or
-// approved broadsheet.
+// sheets. They can be changed at any time: an arm whose broadsheet is already
+// submitted or approved keeps the details it was submitted with, and arms
+// still in progress show the new ones.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -333,9 +334,9 @@ export default function SchoolProfileTab() {
       <div className="mb-4">
         <PublicationNotice>
           School name, abbreviation, address, city, LGA, state and country
-          appear on result sheets. They cannot be changed once an arm has a
-          submitted or approved broadsheet. The server will reject the save if
-          that applies.
+          appear on result sheets. Arms whose broadsheet is already submitted or
+          approved keep the details they were submitted with. Arms still in
+          progress show the new details.
         </PublicationNotice>
       </div>
 

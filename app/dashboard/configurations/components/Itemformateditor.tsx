@@ -15,7 +15,7 @@
 // Backend rules mirrored here: item names are unique and display orders are
 // unique (display order follows the row position). On edit the item list is
 // only sent when it changed, because the backend replaces every item when the
-// list is present.
+// list is present, and refuses to replace items that already have scores.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -96,7 +96,8 @@ function validate(state: FormState, kind: ItemFormatKind): Problems {
   const problems: Problems = { rows: {} };
 
   if (!state.name.trim()) problems.name = "Enter a name.";
-  else if (state.name.trim().length > 100) problems.name = "Maximum 100 characters.";
+  else if (state.name.trim().length > 100)
+    problems.name = "Maximum 100 characters.";
 
   if (state.items.length === 0) {
     problems.items = `Add at least one ${kind.itemLabel.toLowerCase()}.`;
@@ -111,7 +112,8 @@ function validate(state: FormState, kind: ItemFormatKind): Problems {
     } else if (!isWholeNumber(item.maxScore) || Number(item.maxScore) < 0) {
       problems.rows[index] = "Max score must be a whole number, 0 or more.";
     } else if (seen.has(label)) {
-      problems.rows[index] = `This ${kind.itemLabel.toLowerCase()} is used more than once.`;
+      problems.rows[index] =
+        `This ${kind.itemLabel.toLowerCase()} is used more than once.`;
     }
     seen.add(label);
   });
@@ -175,19 +177,22 @@ export default function ItemFormatEditor({
     FormState
   >({
     mutationFn: async (values) => {
-      const { data, error } = await clientAuthFetch<
-        ApiEnvelope<unknown>
-      >(`${kind.endpointBase}/${isEdit ? "detail" : "list"}/`, {
-        method: isEdit ? "PUT" : "POST",
-        body: buildBody(values),
-      });
+      const { data, error } = await clientAuthFetch<ApiEnvelope<unknown>>(
+        `${kind.endpointBase}/${isEdit ? "detail" : "list"}/`,
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: buildBody(values),
+        },
+      );
       if (error) throw new SaveError(error.message, error.data);
       return data!;
     },
     onSuccess: () => {
-      toast.success(isEdit
+      toast.success(
+        isEdit
           ? `${kind.formatLabel} format updated.`
-          : `${kind.formatLabel} format created.`);
+          : `${kind.formatLabel} format created.`,
+      );
       onSaved();
     },
     onError: (err) => {
@@ -198,7 +203,9 @@ export default function ItemFormatEditor({
 
   const problems = validate(state, kind);
   const hasProblems =
-    !!problems.name || !!problems.items || Object.keys(problems.rows).length > 0;
+    !!problems.name ||
+    !!problems.items ||
+    Object.keys(problems.rows).length > 0;
   const hasChanges = !isEdit || !isSameJson(state, initial);
   const serverItems = splitItemErrors(serverErrors, kind.itemsKey);
 
@@ -232,7 +239,9 @@ export default function ItemFormatEditor({
       {isEdit && (
         <PublicationNotice>
           Formats used by an arm whose results are locked cannot be changed.
-          The server will reject the save if that applies.
+          Once scores have been recorded against the {kind.itemLabelPlural},
+          that list cannot be changed either. The server will reject the save if
+          either applies.
         </PublicationNotice>
       )}
 
@@ -243,7 +252,10 @@ export default function ItemFormatEditor({
         placeholder="e.g. Default"
         value={state.name}
         onChange={(name) => updateState({ name })}
-        error={fieldMessage(serverErrors, "name") ?? (state.name ? problems.name : undefined)}
+        error={
+          fieldMessage(serverErrors, "name") ??
+          (state.name ? problems.name : undefined)
+        }
         className="md:max-w-sm"
       />
 
@@ -256,7 +268,10 @@ export default function ItemFormatEditor({
             type="button"
             onClick={() =>
               updateState({
-                items: [...state.items, { key: nextRowKey(), label: "", maxScore: "5" }],
+                items: [
+                  ...state.items,
+                  { key: nextRowKey(), label: "", maxScore: "5" },
+                ],
               })
             }
             className="cursor-pointer flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700"
@@ -271,7 +286,9 @@ export default function ItemFormatEditor({
             <div
               key={item.key}
               className={`rounded-xl border p-3 flex flex-col gap-3 ${
-                rowError ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-slate-50/50"
+                rowError
+                  ? "border-red-200 bg-red-50/40"
+                  : "border-slate-200 bg-slate-50/50"
               }`}
             >
               <div className="grid grid-cols-[1fr_6rem_auto] gap-3 items-end">
@@ -292,7 +309,9 @@ export default function ItemFormatEditor({
                 <button
                   type="button"
                   onClick={() =>
-                    updateState({ items: state.items.filter((i) => i.key !== item.key) })
+                    updateState({
+                      items: state.items.filter((i) => i.key !== item.key),
+                    })
                   }
                   disabled={state.items.length === 1}
                   aria-label={`Remove ${kind.itemLabel.toLowerCase()}`}
@@ -301,7 +320,9 @@ export default function ItemFormatEditor({
                   <Trash2 size={14} />
                 </button>
               </div>
-              {rowError && <p className="text-[11px] text-red-600">{rowError}</p>}
+              {rowError && (
+                <p className="text-[11px] text-red-600">{rowError}</p>
+              )}
             </div>
           );
         })}

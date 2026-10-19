@@ -138,9 +138,9 @@ export default function SubjectDefinitionEditor({
     >
       {isEdit && (
         <PublicationNotice>
-          The name and abbreviation appear on result sheets, so they cannot be
-          changed while the subject is offered in an arm whose results are
-          locked. The server will reject the save if that applies.
+          The name and abbreviation appear on result sheets. Arms whose
+          broadsheet is already submitted or approved keep the subject name they
+          were submitted with. Arms still in progress show the new name.
         </PublicationNotice>
       )}
 

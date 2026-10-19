@@ -11,6 +11,8 @@
 //   • unit names, abbreviations and display orders are unique
 //   • abbreviations contain no spaces
 //   • the units' max scores add up to (highest score − lowest score)
+//   • once scores have been recorded against the units, the list of units
+//     cannot be replaced
 //
 // The list and detail responses do not include the format's low and high, so
 // they are only entered when creating. When editing, the backend compares the
@@ -100,7 +102,8 @@ function validate(state: FormState, isEdit: boolean): Problems {
   const problems: Problems = { rows: {} };
 
   if (!state.name.trim()) problems.name = "Enter a name.";
-  else if (state.name.trim().length > 100) problems.name = "Maximum 100 characters.";
+  else if (state.name.trim().length > 100)
+    problems.name = "Maximum 100 characters.";
 
   let expectedTotal: number | null = null;
   if (!isEdit) {
@@ -132,7 +135,8 @@ function validate(state: FormState, isEdit: boolean): Problems {
     } else if (!abbr || abbr.length > 20) {
       problems.rows[index] = "Abbreviation must be 1–20 characters.";
     } else if (/\s/.test(abbr)) {
-      problems.rows[index] = "Abbreviation cannot contain spaces. Use underscores.";
+      problems.rows[index] =
+        "Abbreviation cannot contain spaces. Use underscores.";
     } else if (!isWholeNumber(unit.maxScore) || Number(unit.maxScore) < 0) {
       problems.rows[index] = "Max score must be a whole number, 0 or more.";
     } else if (names.has(name)) {
@@ -215,7 +219,9 @@ export default function CognitiveFormatEditor({
       return data!;
     },
     onSuccess: () => {
-      toast.success(isEdit ? "Cognitive format updated." : "Cognitive format created.");
+      toast.success(
+        isEdit ? "Cognitive format updated." : "Cognitive format created.",
+      );
       onSaved();
     },
     onError: (err) => {
@@ -234,7 +240,8 @@ export default function CognitiveFormatEditor({
   const serverUnits = splitItemErrors(serverErrors, "units");
 
   const total = state.units.reduce(
-    (sum, unit) => sum + (isWholeNumber(unit.maxScore) ? Number(unit.maxScore) : 0),
+    (sum, unit) =>
+      sum + (isWholeNumber(unit.maxScore) ? Number(unit.maxScore) : 0),
     0,
   );
 
@@ -264,7 +271,9 @@ export default function CognitiveFormatEditor({
       {isEdit && (
         <PublicationNotice>
           Formats used by an arm whose results are locked cannot be changed.
-          The server will reject the save if that applies.
+          Once scores have been recorded against the units, the list of units
+          cannot be changed either. The server will reject the save if either
+          applies.
         </PublicationNotice>
       )}
 
@@ -276,7 +285,10 @@ export default function CognitiveFormatEditor({
           placeholder="e.g. 40 / 60 split"
           value={state.name}
           onChange={(name) => updateState({ name })}
-          error={fieldMessage(serverErrors, "name") ?? (state.name ? problems.name : undefined)}
+          error={
+            fieldMessage(serverErrors, "name") ??
+            (state.name ? problems.name : undefined)
+          }
         />
         {!isEdit && (
           <>
@@ -305,7 +317,8 @@ export default function CognitiveFormatEditor({
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold text-slate-700">
-            Units <span className="font-normal text-slate-400">· total {total}</span>
+            Units{" "}
+            <span className="font-normal text-slate-400">· total {total}</span>
           </h3>
           <button
             type="button"
@@ -329,7 +342,9 @@ export default function CognitiveFormatEditor({
             <div
               key={unit.key}
               className={`rounded-xl border p-3 flex flex-col gap-3 ${
-                rowError ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-slate-50/50"
+                rowError
+                  ? "border-red-200 bg-red-50/40"
+                  : "border-slate-200 bg-slate-50/50"
               }`}
             >
               <div className="grid grid-cols-2 md:grid-cols-[1fr_8rem_8rem_auto] gap-3 items-end">
@@ -359,7 +374,9 @@ export default function CognitiveFormatEditor({
                 <button
                   type="button"
                   onClick={() =>
-                    updateState({ units: state.units.filter((u) => u.key !== unit.key) })
+                    updateState({
+                      units: state.units.filter((u) => u.key !== unit.key),
+                    })
                   }
                   disabled={state.units.length === 1}
                   aria-label="Remove unit"
@@ -368,7 +385,9 @@ export default function CognitiveFormatEditor({
                   <Trash2 size={14} />
                 </button>
               </div>
-              {rowError && <p className="text-[11px] text-red-600">{rowError}</p>}
+              {rowError && (
+                <p className="text-[11px] text-red-600">{rowError}</p>
+              )}
             </div>
           );
         })}

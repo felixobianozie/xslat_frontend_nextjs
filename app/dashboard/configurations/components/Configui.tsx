@@ -447,7 +447,8 @@ export function ErrorNotice({ message, onRetry }: ErrorNoticeProps) {
   );
 }
 
-// A warning shown above forms when saving can change published results.
+// A notice shown above forms about how saving relates to results that are
+// already submitted or approved.
 export function PublicationNotice({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-800">

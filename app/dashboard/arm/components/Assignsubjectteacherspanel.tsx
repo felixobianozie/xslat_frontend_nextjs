@@ -21,6 +21,10 @@
 //
 // The candidates picker excludes anyone already assigned so the user only
 // sees adds they can actually make. Multi-select via checkbox list.
+//
+// Locks. While the arm's broadsheet is submitted or approved the backend
+// refuses to change its teachers, so the panel shows a notice and cannot be
+// saved.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useState } from "react";
@@ -31,6 +35,8 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
+import { PublicationNotice } from "../../configurations/components/Configui";
+import { isArmLocked } from "../../configurations/configutils";
 import type { ApiEnvelope } from "../page";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -172,7 +178,11 @@ export default function AssignSubjectTeachersPanel({
     );
   }
 
-  const canSubmit = !!subject && selectedTeacherIds.length > 0;
+  // Teachers cannot change while the arm's broadsheet is submitted or
+  // approved.
+  const locked = isArmLocked(arm?.broadsheet);
+
+  const canSubmit = !locked && !!subject && selectedTeacherIds.length > 0;
   const armLabel = arm
     ? `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`
     : "—";
@@ -200,6 +210,13 @@ export default function AssignSubjectTeachersPanel({
           </div>
 
           <div className="grid grid-cols-1 gap-5 px-5 py-6">
+            {locked && (
+              <PublicationNotice>
+                This arm&apos;s broadsheet is submitted or approved, so its
+                teachers cannot be changed. Revoke the broadsheet first.
+              </PublicationNotice>
+            )}
+
             {/* Subject + arm context */}
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-slate-500">
@@ -262,12 +279,17 @@ export default function AssignSubjectTeachersPanel({
                     {candidates.map((t) => (
                       <label
                         key={t.id}
-                        className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 rounded-lg px-2 py-1.5"
+                        className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 ${
+                          locked
+                            ? "cursor-not-allowed opacity-60"
+                            : "cursor-pointer hover:bg-slate-50"
+                        }`}
                       >
                         <input
                           type="checkbox"
                           checked={selectedTeacherIds.includes(t.id)}
                           onChange={() => toggleTeacher(t.id)}
+                          disabled={locked}
                           className="rounded text-violet-600 focus:ring-violet-400"
                         />
                         <span className="text-slate-700">
