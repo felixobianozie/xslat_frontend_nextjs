@@ -146,6 +146,24 @@ interface ArmStudent {
   phone?: string;
 }
 
+// ── Student record from the result roster ────────────────────────────────────
+// What arm/result/roster/ returns for each student of an arm. While the arm's
+// broadsheet is pending or approved, the names, gender and registration
+// number are the values captured at submission (`source` is "snapshot"); for
+// any other arm, or for a student with no assessment, they are live
+// (`source` is "live"). It can be used wherever an ArmStudent is expected.
+
+interface ResultRosterStudent {
+  id: string;
+  public_id: string;
+  first_name: string;
+  middle_name: string;
+  last_name: string;
+  gender: "M" | "F" | "O";
+  reg_numb: string;
+  source: "snapshot" | "live";
+}
+
 // ── Subject record (from subject/list/?term-id=…&arm=…) ──────────────────────
 // Backend SubjectSerializer's representation for the arm-scoped list view:
 //   include_subject_fields:        ("id", "definition", "term", "subject_arms",

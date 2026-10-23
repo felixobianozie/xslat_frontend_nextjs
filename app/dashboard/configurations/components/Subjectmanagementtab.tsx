@@ -27,7 +27,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil } from "lucide-react";
+import { Lock, Pencil } from "lucide-react";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type {
@@ -152,13 +152,21 @@ export default function SubjectManagementTab() {
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {definition.abbr}
               </p>
-              {currentTerm && termSubjectsQuery.data && (
-                <div className="mt-2">
-                  <StatusPill
-                    active={offeredDefinitionIds.has(definition.id)}
-                    activeLabel="In this term"
-                    inactiveLabel="Not in this term"
-                  />
+              {((currentTerm && termSubjectsQuery.data) ||
+                definition.is_locked) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {currentTerm && termSubjectsQuery.data && (
+                    <StatusPill
+                      active={offeredDefinitionIds.has(definition.id)}
+                      activeLabel="In this term"
+                      inactiveLabel="Not in this term"
+                    />
+                  )}
+                  {definition.is_locked && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                      <Lock size={10} /> Locked
+                    </span>
+                  )}
                 </div>
               )}
             </div>

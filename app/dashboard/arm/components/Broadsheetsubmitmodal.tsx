@@ -179,6 +179,12 @@ export default function BroadsheetSubmitModal({
       toast.success(copy.successMessage);
       // Refresh the arm so the button switches to the "Pending Review" variant.
       queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      // The arm is now locked: the roster and results read the values
+      // captured at submission, so they are fetched again.
+      queryClient.invalidateQueries({ queryKey: ["arm-students", armId] });
+      queryClient.invalidateQueries({
+        queryKey: ["arm-assessment-compute", armId],
+      });
       onClose();
     },
     onError: (err) => {

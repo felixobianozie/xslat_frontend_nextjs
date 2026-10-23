@@ -39,6 +39,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Lightbulb, Pencil, Save, Sparkles, UserX, X } from "lucide-react";
 import { toast } from "react-toastify";
 
+import { apiErrorText } from "@/lib/Apierrortext";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
@@ -161,7 +162,7 @@ export default function ResultsRemarks({
         },
       );
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(apiErrorText(error));
       return data;
     },
     onSuccess: () => {

@@ -72,6 +72,8 @@ interface StudentAssessmentResult {
   student_middle_name: string | null;
   student_last_name: string;
   student_gender: string | null;
+  // Empty string when the student has no registration number.
+  student_reg_numb: string;
   total_score: number;
   total_score_obtainable: number;
   subject_count: number;

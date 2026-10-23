@@ -39,6 +39,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Save, UserX, X } from "lucide-react";
 import { toast } from "react-toastify";
 
+import { apiErrorText } from "@/lib/Apierrortext";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
@@ -244,7 +245,7 @@ export default function ResultsTraitsGridView({
         "arm/detail/scores/",
         { method: "PUT", body },
       );
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(apiErrorText(error));
       return data;
     },
     onSuccess: () => {

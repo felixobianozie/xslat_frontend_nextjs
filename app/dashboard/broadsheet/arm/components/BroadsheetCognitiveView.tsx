@@ -269,9 +269,8 @@ export default function BroadsheetCognitiveView({
                     {rowIndex + 1}
                   </td>
                   <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44">
-                    {student.first_name}{" "}
+                    {student.last_name} {student.first_name}{" "}
                     {student.middle_name ? `${student.middle_name} ` : ""}
-                    {student.last_name}
                   </td>
                   <td className="px-2 py-2 text-slate-500 whitespace-nowrap">
                     {student.public_id ?? "—"}

@@ -120,6 +120,10 @@ export interface SubjectDefinitionRecord {
   id: string;
   name: string;
   abbr: string;
+  // True while a class arm whose broadsheet is submitted or approved offers a
+  // subject that uses this definition. Its name and abbreviation cannot be
+  // changed then.
+  is_locked?: boolean;
 }
 
 // ── Term subjects ────────────────────────────────────────────────────────────

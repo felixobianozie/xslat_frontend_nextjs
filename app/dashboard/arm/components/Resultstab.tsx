@@ -17,14 +17,17 @@
 //   - submitAction       → which broadsheet modal variant to open (null = closed).
 //
 // Backend wiring:
-//   - Roster:  GET student/list/?school-id=…&arm-id=…&page-size=100
+//   - Roster:  GET arm/result/roster/?school-id=…&arm-id=…  (useArmResultRoster)
 //   - Results: GET arm/assessment/compute/?school-id=…&arm-id=…
+//
+//   The roster gives each student's names, gender and registration number as
+//   the result sheet prints them: the values captured at submission while the
+//   arm is pending or approved, live values otherwise.
 //
 //   The compute endpoint returns the whole ClassAssessmentResult (per-student
 //   subject totals + grades, behaviour/skill grades, class average, position,
 //   and the Pass/Fail decision) so nothing is aggregated on the client.
-//   Subject names/abbrs are carried on each row of the compute payload, so
-//   there is no separate subject/list/ fetch on this tab anymore.
+//   Subject names/abbrs are carried on each row of the compute payload.
 //
 // Broadsheet action button has FOUR status-driven variants:
 //   - broadsheet === "none"    → "Generate Broadsheet" (opens submit modal)
@@ -39,6 +42,7 @@ import { CheckCircle2, Clock, FileBarChart, RefreshCw } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import { useArmResultRoster } from "@/lib/Usearmresultroster";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import TableLoader from "../../components/Tableloader";
 import EmptyState from "../../components/Emptystate";
@@ -53,18 +57,6 @@ import type { ApiEnvelope } from "../page";
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
-const STUDENTS_PAGE_SIZE = 100;
-
-// ── Local response shape for the paginated student endpoint ──────────────────
-interface PaginatedResponse<T> {
-  message: string;
-  count: number;
-  total_pages: number;
-  current_page: number;
-  next: string | null;
-  previous: string | null;
-  data: T[];
-}
 
 // Decide which action verb to send based on current broadsheet status.
 // Pure helper — kept inline since it's tightly coupled to this tab's button.
@@ -90,32 +82,18 @@ export default function ResultsTab() {
   const [submitAction, setSubmitAction] =
     useState<BroadsheetSubmitAction | null>(null);
 
-  // The subject endpoint used to be needed here to divide by class subject
-  // count when averaging locally. Averages are now computed server-side, so
-  // this tab no longer fetches subjects at all — subject names/abbrs come
-  // through on each row of the compute payload.
-
   // ── Data ──────────────────────────────────────────────────────────────────
-  // Two queries: students for the master list, and the server-computed class
-  // assessment for the detail pane. Both reuse cache keys that stay stable
-  // across tab switches, so navigating away and back doesn't re-fetch.
+  // Two queries: the result roster for the master list, and the
+  // server-computed class assessment for the detail pane. Both reuse cache
+  // keys that stay stable across tab switches, so navigating away and back
+  // doesn't re-fetch.
 
   const {
-    data: studentsData,
+    data: rosterData,
     isPending: studentsPending,
     isError: studentsError,
     error: studentsErr,
-  } = useQuery<PaginatedResponse<ArmStudent>>({
-    queryKey: ["arm-students", armId],
-    queryFn: async () => {
-      const url = `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}&page-size=${STUDENTS_PAGE_SIZE}`;
-      const { data, error } =
-        await clientAuthFetch<PaginatedResponse<ArmStudent>>(url);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    enabled: !!armId,
-  });
+  } = useArmResultRoster(armId);
 
   // Server-side aggregate: per-student totals, grades, positions, decisions,
   // plus arm-level class average and student population.
@@ -160,7 +138,7 @@ export default function ResultsTab() {
     }
   }, [classResultIsError, classResultErr]);
 
-  const students = studentsData?.data ?? [];
+  const students = rosterData?.data ?? [];
 
   // Fallback keeps downstream props strictly-typed as ClassAssessmentResult.
   // While the query is pending or errored, the detail pane still renders

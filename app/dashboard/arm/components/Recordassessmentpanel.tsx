@@ -31,8 +31,8 @@
 //     block submission for the touched row.
 //
 // Data sources:
-//   - Class roster: ["arm-students", armId] cache (shared with ClassMembersTab
-//     and ViewAssessmentPanel so the cache is usually hot already).
+//   - Class roster: ["arm-students", armId, …] cache (shared with
+//     ClassMembersTab so the cache is usually hot already).
 //   - Existing scores: arm.assessments from the upstream arm-detail fetch —
 //     used to seed initial cell values. Students without a record start blank.
 //
@@ -62,6 +62,7 @@ import { ChevronLeft, Eye, Save } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 
+import { apiErrorText } from "@/lib/Apierrortext";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
@@ -302,7 +303,7 @@ export default function RecordAssessmentPanel({
         },
       );
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(apiErrorText(error));
       return data;
     },
 

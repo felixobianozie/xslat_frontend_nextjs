@@ -218,6 +218,15 @@ export default function BroadsheetAdminActionModal({
       queryClient.invalidateQueries({
         queryKey: ["broadsheet-arm-detail", armId],
       });
+      // Approving or revoking changes whether the roster and results read the
+      // values captured at submission, so every cached copy is fetched again.
+      queryClient.invalidateQueries({ queryKey: ["arm-students", armId] });
+      queryClient.invalidateQueries({
+        queryKey: ["arm-assessment-compute", armId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["broadsheet-class-result", armId],
+      });
       onClose();
     },
     onError: (err) => {

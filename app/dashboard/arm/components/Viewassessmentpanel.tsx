@@ -34,29 +34,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Pencil } from "lucide-react";
 import { toast } from "react-toastify";
 
-import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import { useArmResultRoster } from "@/lib/Usearmresultroster";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import EmptyState from "../../components/Emptystate";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
-
-// The student/list/ endpoint is paginated; pull a generous page so a typical
-// class arm returns in a single request. Matches RecordAssessmentPanel so the
-// shared cache key serves both modes.
-const ROSTER_PAGE_SIZE = 100;
-
-// Backend `?ordering=` value applied to the roster fetch. Gender-descending
-// primary sort (O → M → F) surfaces male students before female ones; names
-// stay alphabetical inside each gender bucket so the list still reads
-// naturally when scanned. Matches the /dashboard/arm ClassMembersTab default
-// so React Query can reuse a hot cache when that tab has already fetched.
-const ROSTER_ORDERING = "-gender,last_name,first_name";
 
 // Human labels for the single-letter gender codes returned by the backend.
 const GENDER_LABELS: Record<string, string> = {
@@ -64,18 +49,6 @@ const GENDER_LABELS: Record<string, string> = {
   F: "Female",
   O: "Other",
 };
-
-// ── Local response shape for the paginated student endpoint ──────────────────
-// Mirrors xslat_backend.pagination.StandardPagination's envelope.
-interface PaginatedResponse<T> {
-  message: string;
-  count?: number;
-  total_pages?: number;
-  current_page?: number;
-  next?: string | null;
-  previous?: string | null;
-  data: T[];
-}
 
 interface ViewAssessmentPanelProps {
   show: boolean;
@@ -91,7 +64,6 @@ export default function ViewAssessmentPanel({
   onSwitchToRecord,
 }: ViewAssessmentPanelProps) {
   const { armId, arm } = useArmDetails();
-  const { clientAuthFetch } = useClientAuthFetch();
 
   // ── Reference data: units (column definitions) ────────────────────────────
   // Sorted by display_order so columns appear left-to-right in the order the
@@ -108,28 +80,15 @@ export default function ViewAssessmentPanel({
   );
 
   // ── Class roster ──────────────────────────────────────────────────────────
-  // Query key shape mirrors ClassMembersTab's ["arm-students", armId,
-  // sortValue, appliedSearch] key so React Query reuses the cache when that
-  // tab is in its default state (gender_desc + no search).
+  // The result roster: names as the result sheet prints them (the values
+  // captured at submission while the arm is pending or approved). It arrives
+  // males first, then females, then by last name and first name.
   const {
     data: rosterData,
     isPending: rosterPending,
     isError: rosterIsError,
     error: rosterError,
-  } = useQuery<PaginatedResponse<ArmStudent>>({
-    queryKey: ["arm-students", armId, "gender_desc", ""],
-    queryFn: async () => {
-      const url =
-        `student/list/?school-id=${SCHOOL_ID}&arm-id=${armId}` +
-        `&page=1&page-size=${ROSTER_PAGE_SIZE}` +
-        `&ordering=${encodeURIComponent(ROSTER_ORDERING)}`;
-      const { data, error } =
-        await clientAuthFetch<PaginatedResponse<ArmStudent>>(url);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    enabled: show && !!armId,
-  });
+  } = useArmResultRoster(armId, show);
 
   useEffect(() => {
     if (rosterIsError && rosterError) {
