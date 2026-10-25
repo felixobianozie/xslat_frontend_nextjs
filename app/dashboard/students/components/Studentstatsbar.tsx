@@ -16,6 +16,10 @@
 // Withdrawn, Expelled, Transferred) so the composition of "who has left" is
 // visible at a glance without adding another row to the grid.
 //
+// "Male" and "Female" read `current_gender` — the same students as "Active" —
+// so Male + Female (+ others) always equals the Active total. The response's
+// `historic_gender` covers every student the school has ever held.
+//
 // Data layer:
 //  - Fetches its own data internally via useQuery — no server props needed.
 //  - Calls GET student/analytics/?school-id=<X>, which returns server-side
@@ -57,6 +61,12 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 // Mirrors the payload returned by StudentAnalyticsView. Every field the
 // backend returns is typed here; the bar only renders eight of them but the
 // rest are kept on the type so cache readers get full IntelliSense.
+interface StudentGenderCounts {
+  male: number;
+  female: number;
+  others: number;
+}
+
 interface StudentAnalyticsResponse {
   message: string;
   data: {
@@ -68,9 +78,8 @@ interface StudentAnalyticsResponse {
     withdrawn: number;
     expelled: number;
     transferred_out: number;
-    male: number;
-    female: number;
-    others: number;
+    current_gender: StudentGenderCounts;
+    historic_gender: StudentGenderCounts;
     boarding: number;
     day: number;
   };
@@ -162,8 +171,8 @@ export default function StudentStatsBar() {
   const historicTotal = queryData?.data.historic_total ?? 0;
   const enrolled = queryData?.data.enrolled ?? 0;
   const unenrolled = queryData?.data.unenrolled ?? 0;
-  const male = queryData?.data.male ?? 0;
-  const female = queryData?.data.female ?? 0;
+  const male = queryData?.data.current_gender?.male ?? 0;
+  const female = queryData?.data.current_gender?.female ?? 0;
   const graduated = queryData?.data.graduated ?? 0;
   const withdrawn = queryData?.data.withdrawn ?? 0;
   const expelled = queryData?.data.expelled ?? 0;

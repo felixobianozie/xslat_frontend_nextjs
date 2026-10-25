@@ -31,9 +31,9 @@
 //   withdrawn/graduated/transferred out). Each gets its own card rather
 //   than being combined into one, matching how every other metric on this
 //   grid gets its own card. Further breakdown fields (enrolled, unenrolled,
-//   graduated, withdrawn, expelled, transferred_out, male, female, others,
-//   boarding, day) are already typed below for when a richer view is
-//   needed.
+//   graduated, withdrawn, expelled, transferred_out, current_gender,
+//   historic_gender, boarding, day) are already typed below for when a
+//   richer view is needed.
 //
 // Arms/subjects and the current term:
 //   arm/analytics/ and subject/analytics/ both resolve the school's current
@@ -75,6 +75,14 @@ interface ApiEnvelope<T> {
 // `current_total` are rendered on this page for now; the rest of the
 // breakdown is typed so the response is self-documenting and available to
 // future cards.
+// `current_gender` splits the current_total students by gender and
+// `historic_gender` splits the historic_total students.
+interface StudentGenderCounts {
+  male: number;
+  female: number;
+  others: number;
+}
+
 interface StudentAnalytics {
   historic_total: number;
   current_total: number;
@@ -84,9 +92,8 @@ interface StudentAnalytics {
   withdrawn: number;
   expelled: number;
   transferred_out: number;
-  male: number;
-  female: number;
-  others: number;
+  current_gender: StudentGenderCounts;
+  historic_gender: StudentGenderCounts;
   boarding: number;
   day: number;
 }
