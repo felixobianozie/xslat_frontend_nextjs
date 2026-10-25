@@ -6,7 +6,8 @@
 // Slide-in panel to assign teachers to a subject within THIS arm.
 //
 // Backend wiring:
-//   - Candidates picker: GET staff/portfolios/list/?school-id=…&page-size=100
+//   - Candidates picker: GET staff/portfolios/list/?school-id=…&status=active&page-size=100
+//     (only active staff can be assigned as teachers)
 //   - Assignment write:  PUT subject/detail/
 //       body: {
 //         id: subjectId,
@@ -92,7 +93,7 @@ export default function AssignSubjectTeachersPanel({
   } = useQuery<PaginatedResponse<ArmTeacher>>({
     queryKey: ["arm-teacher-options", SCHOOL_ID],
     queryFn: async () => {
-      const url = `staff/portfolios/list/?school-id=${SCHOOL_ID}&page-size=${TEACHERS_PAGE_SIZE}`;
+      const url = `staff/portfolios/list/?school-id=${SCHOOL_ID}&status=active&page-size=${TEACHERS_PAGE_SIZE}`;
       const { data, error } =
         await clientAuthFetch<PaginatedResponse<ArmTeacher>>(url);
       if (error) throw new Error(error.message);

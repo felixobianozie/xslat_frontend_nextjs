@@ -38,8 +38,12 @@ interface StaffTabAreaProps {
    * Null when the server fetch failed — StaffList handles the empty state.
    */
   initialPortfolios: PaginatedResponse<StaffPortfolio> | null;
-  /** Server-fetched pending profile requests — passed to ProfileRequests as initialData. */
-  initialRequests: StaffProfReq[];
+  /**
+   * Full server-fetched paginated envelope for page 1 of the pending profile
+   * requests — passed to ProfileRequests as initialData. Null when the server
+   * fetch failed.
+   */
+  initialRequests: PaginatedResponse<StaffProfReq> | null;
 }
 
 export default function StaffTabArea({

@@ -4,7 +4,7 @@
 // Analyticsstatsbar.tsx
 //
 // Top-level stat grid for the /dashboard/analytics page.
-// Cards: Current Students · Historic Students · Total Staff · Total Class
+// Cards: Current Students · Historic Students · Current Staff · Total Class
 //        Arms · Total Subjects
 //
 // Data layer:
@@ -21,7 +21,7 @@
 //
 // Backend endpoints:
 //   GET student/analytics/?school-id=<id>   → { data.current_total, data.historic_total, … }
-//   GET staff/analytics/?school-id=<id>     → { data.total, … }
+//   GET staff/analytics/?school-id=<id>     → { data.current_total, data.historic_total, … }
 //   GET arm/analytics/?school-id=<id>       → { data.total, data.has_current_term, … }
 //   GET subject/analytics/?school-id=<id>   → { data.total, data.has_current_term, … }
 //
@@ -98,10 +98,13 @@ interface StudentAnalytics {
   day: number;
 }
 
-// Shape from GET staff/analytics/. Only `total` is consumed here — other
-// fields the endpoint may return (active, academic, etc.) are not relied on.
+// Shape from GET staff/analytics/. Only `current_total` (staff still part of
+// the school: active and inactive) is consumed here; `historic_total` adds
+// the staff who have left. Other fields the endpoint returns are not relied
+// on.
 interface StaffAnalytics {
-  total: number;
+  current_total: number;
+  historic_total: number;
 }
 
 // Shape from GET arm/analytics/. Only `total` and `has_current_term` are
@@ -252,7 +255,8 @@ export default function AnalyticsStatsBar() {
     studentQuery.data?.data.historic_total?.toLocaleString() ?? "—";
 
   const staffLoading = staffQuery.isLoading;
-  const staffValue = staffQuery.data?.data.total?.toLocaleString() ?? "—";
+  const staffValue =
+    staffQuery.data?.data.current_total?.toLocaleString() ?? "—";
 
   const armsLoading = armsQuery.isLoading;
   const armsValue =
@@ -283,7 +287,7 @@ export default function AnalyticsStatsBar() {
         color="slate"
       />
       <AnalyticsCard
-        label="Total Staff"
+        label="Current Staff"
         value={staffValue}
         loading={staffLoading}
         icon={<Users size={20} />}

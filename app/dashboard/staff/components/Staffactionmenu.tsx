@@ -33,6 +33,7 @@ import {
   Ban,
   Trash2,
   ShieldCheck,
+  Briefcase,
 } from "lucide-react";
 
 interface StaffActionMenuProps {
@@ -41,6 +42,7 @@ interface StaffActionMenuProps {
   inviteState: InviteState | null;
   onViewProfile: () => void;
   onAssignRoles: () => void;
+  onSetEmployment: () => void;
   onResendInvite: () => void;
   onChangeInviteEmail: () => void;
   onRevokeInvite: () => void;
@@ -55,6 +57,7 @@ export default function StaffActionMenu({
   inviteState,
   onViewProfile,
   onAssignRoles,
+  onSetEmployment,
   onResendInvite,
   onChangeInviteEmail,
   onRevokeInvite,
@@ -171,6 +174,14 @@ export default function StaffActionMenu({
               label="Roles & Permissions"
               onClick={() => {
                 onAssignRoles();
+                setOpen(false);
+              }}
+            />
+            <MenuItem
+              icon={<Briefcase size={13} />}
+              label="Set Employment"
+              onClick={() => {
+                onSetEmployment();
                 setOpen(false);
               }}
             />

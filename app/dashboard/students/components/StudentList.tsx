@@ -4,10 +4,12 @@
 // StudentList.tsx
 //
 // Renders the paginated student list.
-// Includes: backend-driven search (submit-on-demand), backend filter, backend
-// sort, print, Create Student slide-in panel, Assign/Change Arm slide-in
-// panels, a Remove from Class confirmation modal, and bulk selection (with a
-// contextual action bar that opens the Bulk Assign Arm slide-in panel).
+// Includes: backend-driven search (submit-on-demand), multi-select backend
+// filters (a draft that is sent when Apply is pressed, with a quick Reset),
+// backend sort, a badge counting the matching students, print, Create Student
+// slide-in panel, Assign/Change Arm slide-in panels, a Remove from Class
+// confirmation modal, and bulk selection (with a contextual action bar that
+// opens the Bulk Assign Arm slide-in panel).
 //
 // Data layer:
 //  - initialData is the full server-fetched paginated envelope for page 1 with
@@ -44,14 +46,12 @@
 //    the toolbar and the table with a Bulk Assign Arm button.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useState, useRef, useEffect, FormEvent } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useReactToPrint } from "react-to-print";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Search,
-  Filter,
   ArrowUpDown,
   Printer,
   UserPlus,
@@ -72,6 +72,12 @@ import StudentStatusPill from "./Studentstatuspill";
 import Paginator, { PAGE_SIZE } from "../../components/Paginator";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
+import DropdownPanel from "../../components/Dropdownpanel";
+import FilterPanel, {
+  type FilterGroupConfig,
+  type FilterValues,
+} from "../../components/Filterpanel";
+import ResultCount from "../../components/Resultcount";
 import type { PaginatedResponse } from "../page";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -89,45 +95,65 @@ const GENDER_LABELS: Record<string, string> = {
   O: "Other",
 };
 
-// ── Filter options — every option maps to a real GET student/list/ param ─────
-// Backend supports gender=<M|F|O>, no-arm=true, and status=<comma_list> as
-// list-scoping filters. The `status:leavers` sentinel value is expanded in
-// buildStudentsUrl to the four permanent-leave enum values so the toolbar's
-// "All Leavers" entry maps to one comma-list request.
-type FilterOption =
-  | "all"
-  | "gender:M"
-  | "gender:F"
-  | "no_arm:true"
-  | "status:graduated"
-  | "status:withdrawn"
-  | "status:expelled"
-  | "status:transferred_out"
-  | "status:leavers";
-
-// Expanded form of the `leavers` sentinel — matches PERMANENT_LEAVE_STATUSES
-// on the backend (academics.models.StudentPortfolio). Kept as a single
-// constant so the four-value list has one source of truth.
-const LEAVERS_STATUS_LIST = "graduated,withdrawn,expelled,transferred_out";
-
-// FILTER_OPTIONS shape: `groupStart` marks the first option in a visual
-// grouping so the dropdown renders a divider before it. Groups are:
-// (all) → gender → enrollment → status.
-const FILTER_OPTIONS: {
-  label: string;
-  value: FilterOption;
-  groupStart?: boolean;
-}[] = [
-  { label: "All Students", value: "all" },
-  { label: "Male", value: "gender:M", groupStart: true },
-  { label: "Female", value: "gender:F" },
-  { label: "Unenrolled", value: "no_arm:true", groupStart: true },
-  { label: "Graduated", value: "status:graduated", groupStart: true },
-  { label: "Withdrawn", value: "status:withdrawn" },
-  { label: "Expelled", value: "status:expelled" },
-  { label: "Transferred Out", value: "status:transferred_out" },
-  { label: "All Leavers", value: "status:leavers" },
+// ── Filters — every group maps to a real GET student/list/ param ─────────────
+//   gender      one value  → gender=<M|F>
+//   enrollment  "unenrolled" → no-arm=true (students with no class this term)
+//   status      several values → status=<comma list>, the permanent-leave
+//               statuses; the backend treats the list as "any of these"
+// Groups combine with AND. Unenrolled never includes someone who has left, so
+// ticking it together with a leaver status returns nothing.
+const FILTER_GROUPS: FilterGroupConfig[] = [
+  {
+    key: "gender",
+    title: "Gender",
+    mode: "single",
+    options: [
+      { label: "Male", value: "M" },
+      { label: "Female", value: "F" },
+    ],
+  },
+  {
+    key: "enrollment",
+    title: "Enrollment",
+    mode: "single",
+    options: [{ label: "Unenrolled", value: "unenrolled" }],
+  },
+  {
+    key: "status",
+    title: "Status",
+    mode: "multi",
+    options: [
+      { label: "Graduated", value: "graduated" },
+      { label: "Withdrawn", value: "withdrawn" },
+      { label: "Expelled", value: "expelled" },
+      { label: "Transferred Out", value: "transferred_out" },
+    ],
+  },
 ];
+
+// The four permanent-leave statuses — matches PERMANENT_LEAVE_STATUSES on the
+// backend (academics.models.StudentPortfolio). Ticking all four is what the
+// old "All Leavers" entry did.
+const LEAVER_STATUSES = [
+  "graduated",
+  "withdrawn",
+  "expelled",
+  "transferred_out",
+];
+
+const FILTER_SHORTCUTS = [
+  { label: "All leavers", values: { status: LEAVER_STATUSES } },
+];
+
+const DEFAULT_FILTERS: FilterValues = {
+  gender: [],
+  enrollment: [],
+  status: [],
+};
+
+function hasActiveFilters(filters: FilterValues): boolean {
+  return Object.values(filters).some((values) => values.length > 0);
+}
 
 // ── Sort options — every option maps to a real GET student/list/ ordering ────
 // Backend whitelist for ?ordering= is {last_name, first_name, gender,
@@ -179,7 +205,7 @@ const SORT_OPTIONS: {
 // minimal for the common "no filter, no sort, no search" case.
 function buildStudentsUrl(
   page: number,
-  activeFilter: FilterOption,
+  filters: FilterValues,
   sortValue: SortValue,
   appliedSearch: string,
 ): string {
@@ -189,20 +215,10 @@ function buildStudentsUrl(
     "page-size": String(PAGE_SIZE),
   });
 
-  // Filter — split the encoded value (e.g. "gender:M") into param + value.
-  if (activeFilter !== "all") {
-    const [param, val] = activeFilter.split(":");
-    if (param === "gender") {
-      params.set("gender", val);
-    } else if (param === "no_arm") {
-      params.set("no-arm", val);
-    } else if (param === "status") {
-      // Expand the `leavers` sentinel into the four permanent-leave enum
-      // values; any other status filter passes its value through as-is.
-      const statusVal = val === "leavers" ? LEAVERS_STATUS_LIST : val;
-      params.set("status", statusVal);
-    }
-  }
+  // Filters — a group with nothing ticked sends nothing.
+  if (filters.gender?.length) params.set("gender", filters.gender[0]);
+  if (filters.enrollment?.includes("unenrolled")) params.set("no-arm", "true");
+  if (filters.status?.length) params.set("status", filters.status.join(","));
 
   // Sort — only append when the option has an ordering string.
   const ordering = SORT_OPTIONS.find((s) => s.value === sortValue)?.ordering;
@@ -259,9 +275,10 @@ export default function StudentList({ initialData }: StudentListProps) {
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
-  const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
+  // The filters in effect. The filter panel keeps its own draft and hands the
+  // whole selection over when Apply is pressed.
+  const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTERS);
   const [sortValue, setSortValue] = useState<SortValue>("default");
-  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -293,81 +310,14 @@ export default function StudentList({ initialData }: StudentListProps) {
   >(new Map());
 
   // Refs
-  // Filter dropdown uses two refs because its panel is rendered in a portal
-  // to escape the enclosing `overflow-hidden` panel wrapper — the trigger
-  // ref anchors the panel's computed position, and both refs together
-  // define what counts as "inside" for the outside-click handler.
-  const filterTriggerRef = useRef<HTMLButtonElement>(null);
-  const filterPanelRef = useRef<HTMLDivElement>(null);
-  const sortDropdownRef = useRef<HTMLDivElement>(null);
+  // The sort button anchors its menu, which the shared DropdownPanel draws in
+  // a portal so a short list cannot clip it.
+  const sortTriggerRef = useRef<HTMLButtonElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
   // Ref for the header checkbox so we can set its `indeterminate` HTML
   // property (React doesn't expose `indeterminate` as a prop).
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const handlePrint = useReactToPrint({ contentRef: printRef });
-
-  // ── Filter dropdown portal positioning ─────────────────────────────────────
-  // Panel width in pixels — matches the visual size the inline dropdown had
-  // (Tailwind w-52 = 13rem = 208px). Kept as a literal so the position math
-  // below and the panel's inline width style stay in sync.
-  const FILTER_PANEL_WIDTH = 208;
-
-  const [filterPanelPos, setFilterPanelPos] = useState<{
-    top: number;
-    left: number;
-  }>({ top: 0, left: 0 });
-
-  // Compute the panel's viewport position from the trigger button's rect.
-  // The panel's right edge aligns with the trigger's right edge (matching
-  // the inline `right-0` positioning it had before), sitting 4px below the
-  // trigger to leave a small visual gap.
-  const updateFilterPanelPos = useCallback(() => {
-    if (!filterTriggerRef.current) return;
-    const rect = filterTriggerRef.current.getBoundingClientRect();
-    setFilterPanelPos({
-      top: rect.bottom + 4,
-      left: rect.right - FILTER_PANEL_WIDTH,
-    });
-  }, []);
-
-  useEffect(() => {
-    if (filterDropdownOpen) updateFilterPanelPos();
-  }, [filterDropdownOpen, updateFilterPanelPos]);
-
-  // Keep the portalled panel anchored while the user scrolls or resizes.
-  // `useCapture: true` on scroll catches ancestor scroll containers too.
-  useEffect(() => {
-    if (!filterDropdownOpen) return;
-    window.addEventListener("scroll", updateFilterPanelPos, true);
-    window.addEventListener("resize", updateFilterPanelPos);
-    return () => {
-      window.removeEventListener("scroll", updateFilterPanelPos, true);
-      window.removeEventListener("resize", updateFilterPanelPos);
-    };
-  }, [filterDropdownOpen, updateFilterPanelPos]);
-
-  // Close either dropdown when the user clicks anywhere outside it. The
-  // filter dropdown considers both its trigger and its portalled panel as
-  // "inside" — clicks on either shouldn't dismiss the menu.
-  useEffect(() => {
-    function handleOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      const insideFilter =
-        filterTriggerRef.current?.contains(target) ||
-        filterPanelRef.current?.contains(target);
-      if (!insideFilter) {
-        setFilterDropdownOpen(false);
-      }
-      if (
-        sortDropdownRef.current &&
-        !sortDropdownRef.current.contains(target)
-      ) {
-        setSortDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, []);
 
   // ── React Query — list ─────────────────────────────────────────────────────
   // The query key covers every param sent to the backend, so any change to
@@ -384,14 +334,14 @@ export default function StudentList({ initialData }: StudentListProps) {
       "students",
       SCHOOL_ID,
       currentPage,
-      activeFilter,
+      filters,
       sortValue,
       appliedSearch,
     ],
     queryFn: async () => {
       const url = buildStudentsUrl(
         currentPage,
-        activeFilter,
+        filters,
         sortValue,
         appliedSearch,
       );
@@ -413,7 +363,7 @@ export default function StudentList({ initialData }: StudentListProps) {
     // initial state since that is exactly what the server fetched.
     initialData:
       currentPage === 1 &&
-      activeFilter === "all" &&
+      !hasActiveFilters(filters) &&
       sortValue === "default" &&
       appliedSearch === ""
         ? (initialData ?? undefined)
@@ -423,7 +373,7 @@ export default function StudentList({ initialData }: StudentListProps) {
     // an immediate background refetch on mount when on the initial state.
     initialDataUpdatedAt:
       currentPage === 1 &&
-      activeFilter === "all" &&
+      !hasActiveFilters(filters) &&
       sortValue === "default" &&
       appliedSearch === ""
         ? initialDataTimestamp
@@ -553,10 +503,16 @@ export default function StudentList({ initialData }: StudentListProps) {
     }
   }
 
-  function handleFilterChange(f: FilterOption) {
-    setActiveFilter(f);
+  // Called by the filter panel when Apply is pressed: one request for the
+  // whole selection, starting again from page 1.
+  function applyFilters(next: FilterValues) {
+    setFilters(next);
     setCurrentPage(1);
-    setFilterDropdownOpen(false);
+  }
+
+  function resetFilters() {
+    setFilters(DEFAULT_FILTERS);
+    setCurrentPage(1);
   }
 
   function handleSortChange(s: SortValue) {
@@ -648,11 +604,12 @@ export default function StudentList({ initialData }: StudentListProps) {
     toast.info(FEATURE_IN_WORKS);
   }
 
-  // Labels for the two dropdown buttons.
-  const activeFilterLabel =
-    FILTER_OPTIONS.find((o) => o.value === activeFilter)?.label ?? "Filter";
+  // Label for the sort button.
   const activeSortLabel =
     SORT_OPTIONS.find((o) => o.value === sortValue)?.label ?? "Sort";
+
+  // True while a search or filter narrows the list.
+  const isFiltered = appliedSearch !== "" || hasActiveFilters(filters);
 
   // Determines whether any slide-in panel is open — used to collapse the list.
   const anyPanelOpen =
@@ -679,10 +636,11 @@ export default function StudentList({ initialData }: StudentListProps) {
           {/* Two groups: the search form and a single right-aligned action row
               containing Filter, Sort, Print and Create. On mobile they stack;
               on lg+ they lay out inline. Create uses CSS `order` to sit at
-              the leftmost slot of the action row on mobile so Filter and
-              Sort stay near the right edge and their `right-0`-positioned
-              menus never extend past the left side of the viewport. */}
-          <div className="flex flex-col lg:flex-row gap-2 mb-6">
+              the leftmost slot of the action row on mobile. */}
+          {/* pt-2 leaves room above the buttons for the filter's reset badge,
+              which sits on the button's top corner and would otherwise be cut
+              off by this panel's overflow-hidden. */}
+          <div className="flex flex-col lg:flex-row gap-2 pt-2 mb-6">
             {/* Search input + Submit button — wrapped in a form so pressing
                 Enter inside the input triggers the same submit path as the
                 button. Typing alone never fires a request. */}
@@ -729,93 +687,29 @@ export default function StudentList({ initialData }: StudentListProps) {
               </button>
             </form>
 
-            {/* Filter, Sort, Print and Create — one right-aligned group. On
-                mobile Create jumps to the visual leftmost slot via
-                `order-first`, which keeps Sort near the right edge so its
-                `right-0`-positioned menu never extends past the left side
-                of the viewport. The Filter panel is portalled with computed
-                positioning, so its placement stays consistent regardless of
-                where the trigger sits in the toolbar. On md+ the natural
-                DOM order is restored via `md:order-none` and Create returns
-                to its usual rightmost position. Print is hidden below md. */}
+            {/* Filter, Sort, Print and Create — one right-aligned group. The
+                Filter and Sort panels are drawn in a portal and placed from
+                their buttons, so where the buttons sit never affects them.
+                On mobile Create jumps to the visual leftmost slot via
+                `order-first`; on md+ the natural DOM order is restored via
+                `md:order-none`. Print is hidden below md. */}
             <div className="flex gap-2 justify-end">
-              {/* Filter dropdown — the panel is rendered via a portal to
-                  document.body so it escapes the enclosing panel wrapper's
-                  overflow-hidden (needed for the slide-in-panel collapse
-                  animation) and flows freely over the table below when the
-                  option list is tall. */}
+              {/* Filter — tick any combination, then press Apply. The quick
+                  Reset beside the button shows while a filter is applied. */}
+              <FilterPanel
+                groups={FILTER_GROUPS}
+                applied={filters}
+                onApply={applyFilters}
+                onReset={resetFilters}
+                shortcuts={FILTER_SHORTCUTS}
+              />
+
+              {/* Sort — a single choice, so it applies as soon as it is picked */}
               <div className="relative">
                 <button
-                  ref={filterTriggerRef}
-                  onClick={() => {
-                    setFilterDropdownOpen((o) => !o);
-                    setSortDropdownOpen(false);
-                  }}
-                  aria-haspopup="menu"
-                  aria-expanded={filterDropdownOpen}
-                  className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
-                    activeFilter !== "all"
-                      ? "border-violet-400 bg-violet-50 text-violet-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
-                  }`}
-                >
-                  <Filter size={12} />
-                  <span className="hidden sm:inline">{activeFilterLabel}</span>
-                  <span className="sm:hidden">Filter</span>
-                </button>
-
-                {filterDropdownOpen &&
-                  createPortal(
-                    <div
-                      ref={filterPanelRef}
-                      role="menu"
-                      style={{
-                        position: "fixed",
-                        top: filterPanelPos.top,
-                        left: filterPanelPos.left,
-                        width: FILTER_PANEL_WIDTH,
-                        zIndex: 9999,
-                      }}
-                      className="bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden py-1 max-h-[70vh] overflow-y-auto"
-                    >
-                      {FILTER_OPTIONS.map((opt) => {
-                        const isActive = activeFilter === opt.value;
-                        return (
-                          <div key={opt.value}>
-                            {/* Thin divider before the first entry in each
-                                new group (gender, enrollment, status). Skipped
-                                on the very first option so the list doesn't
-                                open with a divider. */}
-                            {opt.groupStart && (
-                              <div className="my-1 border-t border-slate-100" />
-                            )}
-                            <button
-                              role="menuitem"
-                              onClick={() => handleFilterChange(opt.value)}
-                              className={`cursor-pointer w-full flex items-center justify-between text-left px-4 py-2 text-xs transition-colors ${
-                                isActive
-                                  ? "bg-violet-50 text-violet-700 font-semibold"
-                                  : "text-slate-600 hover:bg-slate-50"
-                              }`}
-                            >
-                              <span>{opt.label}</span>
-                              {isActive && <Check size={12} />}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>,
-                    document.body,
-                  )}
-              </div>
-
-              {/* Sort dropdown — same interaction pattern as the filter */}
-              <div ref={sortDropdownRef} className="relative">
-                <button
-                  onClick={() => {
-                    setSortDropdownOpen((o) => !o);
-                    setFilterDropdownOpen(false);
-                  }}
+                  ref={sortTriggerRef}
+                  type="button"
+                  onClick={() => setSortDropdownOpen((o) => !o)}
                   aria-haspopup="menu"
                   aria-expanded={sortDropdownOpen}
                   className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
@@ -829,11 +723,15 @@ export default function StudentList({ initialData }: StudentListProps) {
                   <span className="sm:hidden">Sort</span>
                 </button>
 
-                {sortDropdownOpen && (
-                  <div
-                    role="menu"
-                    className="absolute top-10 right-0 z-20 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden w-44 sm:w-52 py-1"
-                  >
+                <DropdownPanel
+                  open={sortDropdownOpen}
+                  onClose={() => setSortDropdownOpen(false)}
+                  anchorRef={sortTriggerRef}
+                  width={208}
+                  align="right"
+                  label="Sort students"
+                >
+                  <div className="py-1">
                     {SORT_OPTIONS.map((opt) => {
                       const isActive = sortValue === opt.value;
                       return (
@@ -853,7 +751,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                       );
                     })}
                   </div>
-                )}
+                </DropdownPanel>
               </div>
 
               {/* Print — hidden below md to keep the mobile toolbar compact */}
@@ -880,28 +778,36 @@ export default function StudentList({ initialData }: StudentListProps) {
             </div>
           </div>
 
-          {/* ── Active-search pill ───────────────────────────────────────── */}
-          {/* Confirms to the user which query the current results are scoped
-              to and offers a one-click way out. Shown only when there's an
-              active backend search in effect. */}
-          {appliedSearch && (
-            <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
-              <span>Showing results for</span>
-              <span className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1 font-medium">
-                <span className="truncate max-w-55">
-                  &ldquo;{appliedSearch}&rdquo;
+          {/* ── Results summary ───────────────────────────────────────── */}
+          {/* How many students the applied search and filters returned, and,
+              while a search is applied, the search the results are scoped to
+              with a one-click way out. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <ResultCount
+              count={queryData?.count}
+              singular="student"
+              plural="students"
+              filtered={isFiltered}
+            />
+            {appliedSearch && (
+              <>
+                <span>for</span>
+                <span className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1 font-medium">
+                  <span className="truncate max-w-55">
+                    &ldquo;{appliedSearch}&rdquo;
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSearchClear}
+                    aria-label="Clear search"
+                    className="cursor-pointer text-violet-500 hover:text-violet-800 transition-colors"
+                  >
+                    <X size={11} />
+                  </button>
                 </span>
-                <button
-                  type="button"
-                  onClick={handleSearchClear}
-                  aria-label="Clear search"
-                  className="cursor-pointer text-violet-500 hover:text-violet-800 transition-colors"
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            </div>
-          )}
+              </>
+            )}
+          </div>
 
           {/* ── Bulk action bar ─────────────────────────────────────────── */}
           {/* Appears between toolbar and table when 2+ students are selected.

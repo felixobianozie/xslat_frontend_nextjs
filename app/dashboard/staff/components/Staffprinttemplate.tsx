@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { forwardRef } from "react";
+import { STAFF_STATUS_LABELS } from "../staffstatus";
 
 const EMPLOYMENT_LABELS: Record<StaffPortfolio["employment"], string> = {
   FT: "Full-time",
@@ -54,11 +55,17 @@ const StaffPrintTemplate = forwardRef<HTMLDivElement, StaffPrintTemplateProps>(
                     {user.first_name} {user.last_name}
                   </td>
                   <td className="px-3 font-mono">{user.public_id}</td>
-                  <td className="px-3">{portfolio.academic ? "Academic" : "Non-Academic"}</td>
-                  <td className="px-3">{EMPLOYMENT_LABELS[portfolio.employment]}</td>
+                  <td className="px-3">
+                    {portfolio.academic ? "Academic" : "Non-Academic"}
+                  </td>
+                  <td className="px-3">
+                    {EMPLOYMENT_LABELS[portfolio.employment]}
+                  </td>
                   <td className="px-3">+{user.phone || "—"}</td>
                   <td className="px-3">{user.email || "—"}</td>
-                  <td className="px-3 capitalize">{portfolio.status}</td>
+                  <td className="px-3">
+                    {STAFF_STATUS_LABELS[portfolio.status]}
+                  </td>
                 </tr>
               );
             })}

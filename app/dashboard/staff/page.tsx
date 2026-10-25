@@ -1,8 +1,8 @@
 // app/dashboard/staff/page.tsx
 //
-// Server Component — fetches the first page of staff portfolios and the
-// pending profile requests in parallel on the server, then passes them as
-// initialData props to the respective client components.
+// Server Component — fetches the first page of staff portfolios and the first
+// page of pending profile requests in parallel on the server, then passes
+// them as initialData props to the respective client components.
 //
 // StaffStatsBar is excluded — it fetches its own data internally via useQuery.
 //
@@ -65,21 +65,27 @@ async function fetchInitialPortfolios(): Promise<PaginatedResponse<StaffPortfoli
 }
 
 /**
- * Fetches pending staff profile requests for the school.
- * The `status=pending` filter is intentional — the Requests tab only shows
- * requests that need attention from the admin.
+ * Fetches page 1 of the pending staff profile requests for the school, with
+ * the same page-size the client uses.
+ * The `status=pending` filter is intentional — the Requests tab opens on the
+ * requests that need attention from the admin. The full paginated envelope is
+ * returned so the Requests tab can show real page counts.
  */
-async function fetchInitialRequests(): Promise<StaffProfReq[]> {
-  const { data, error } = await serverAuthFetch<{ data: StaffProfReq[] }>(
-    `staff/requests/list/?school-id=${SCHOOL_ID}&status=pending`,
+async function fetchInitialRequests(): Promise<PaginatedResponse<StaffProfReq> | null> {
+  const { data, error } = await serverAuthFetch<
+    PaginatedResponse<StaffProfReq>
+  >(
+    `staff/requests/list/?school-id=${SCHOOL_ID}&status=pending&page=1&page-size=${PAGE_SIZE}`,
   );
 
   if (error || !data) {
+    // Return null on failure — the Requests tab fetches fresh data on the
+    // client.
     console.error("Failed to fetch initial staff requests:", error?.message);
-    return [];
+    return null;
   }
 
-  return data.data;
+  return data;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────

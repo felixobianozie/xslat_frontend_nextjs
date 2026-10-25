@@ -19,6 +19,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import { ALL_STAFF_STATUSES } from "../../staff/staffstatus";
 import type {
   ApiEnvelope,
   PermissionRecord,
@@ -70,7 +71,10 @@ export interface RoleMemberCount {
   isError: boolean;
 }
 
-// The member count of every role, keyed by role name.
+// The member count of every role, keyed by role name. It counts everyone who
+// holds the role, departed staff included: the staff list shows only current
+// staff unless a status is sent, and a role stays with a person who has left,
+// so the delete warning must count them.
 export function useRoleMemberCounts(
   roleNames: string[],
 ): Record<string, RoleMemberCount> {
@@ -81,7 +85,7 @@ export function useRoleMemberCounts(
       queryKey: [...ROLE_MEMBERS_KEY, name],
       queryFn: async () => {
         const { data, error } = await clientAuthFetch<{ count: number }>(
-          `staff/portfolios/list/?school-id=${SCHOOL_ID}&role=${encodeURIComponent(
+          `staff/portfolios/list/?school-id=${SCHOOL_ID}&status=${ALL_STAFF_STATUSES}&role=${encodeURIComponent(
             name,
           )}&page-size=1`,
         );

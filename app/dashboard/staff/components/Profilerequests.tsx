@@ -17,10 +17,13 @@
 //                          Lift and approve (grants the staff portfolio now)
 //
 // Data layer:
-//  - initialData is server-fetched by the parent page and used for the
-//    Pending view. The other views load when they are first opened.
+//  - initialData is the server-fetched first page of the Pending view. The
+//    other views, other pages and searches load when first opened.
+//  - The list is paginated and searchable on the backend. Typing in the
+//    search box sends nothing; Enter or the search button does. The paginator
+//    steps through the pages of the open view.
 //  - useQuery is the single source of truth after hydration. The query key
-//    includes the view, so each view is cached on its own.
+//    includes the view, page and search, so each is cached on its own.
 //  - Every action goes through one useMutation that calls
 //    PUT staff/requests/review/ with { request_id, status }.
 //  - On success the mutation refreshes the requests caches. An approval also
@@ -35,8 +38,8 @@
 // It is not used anywhere else so it lives here rather than as a separate file.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { ReactNode, useState } from "react";
-import { HelpCircle } from "lucide-react";
+import { FormEvent, ReactNode, useState } from "react";
+import { HelpCircle, Search, X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ProfileRequestActionMenu from "./Profilerequestactionmenu";
@@ -45,6 +48,8 @@ import ButtonLoader from "../../components/Buttonloader";
 import EmptyState from "../../components/Emptystate";
 import { toast } from "react-toastify";
 import TableLoader from "../../components/Tableloader";
+import Paginator, { PAGE_SIZE } from "../../components/Paginator";
+import type { PaginatedResponse } from "../page";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -177,8 +182,11 @@ const ACTIONS: Record<ReviewAction, ActionConfig> = {
 // ── Props ──────────────────────────────────────────────────────────────────
 
 interface ProfileRequestsProps {
-  /** Server-fetched pending profile requests — used as React Query initialData. */
-  initialData: StaffProfReq[];
+  /**
+   * Server-fetched first page of the pending profile requests — used as React
+   * Query initialData. Null when the server fetch failed.
+   */
+  initialData: PaginatedResponse<StaffProfReq> | null;
 }
 
 export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
@@ -187,6 +195,11 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [view, setView] = useState<RequestView>("pending");
+  // `searchInput` is what is typed and is never sent by itself;
+  // `appliedSearch` is what the backend is asked for.
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedRequest, setSelectedRequest] = useState<StaffProfReq | null>(
     null,
   );
@@ -198,22 +211,39 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
   } | null>(null);
 
   // ── React Query ────────────────────────────────────────────────────────────
-  const { data: requests = [], isPending } = useQuery<StaffProfReq[]>({
-    queryKey: ["staff-requests", SCHOOL_ID, view],
+  // The server fetched page 1 of the pending view, with no search
+  const isStartingState =
+    view === "pending" && currentPage === 1 && appliedSearch === "";
+
+  const { data: queryData, isPending } = useQuery<
+    PaginatedResponse<StaffProfReq>
+  >({
+    queryKey: ["staff-requests", SCHOOL_ID, view, currentPage, appliedSearch],
 
     queryFn: async () => {
-      const { data, error } = await clientAuthFetch<{ data: StaffProfReq[] }>(
-        `staff/requests/list/?school-id=${SCHOOL_ID}&status=${view}`,
-      );
+      const params = new URLSearchParams({
+        "school-id": SCHOOL_ID,
+        status: view,
+        page: String(currentPage),
+        "page-size": String(PAGE_SIZE),
+      });
+      if (appliedSearch) params.set("search", appliedSearch);
+
+      const { data, error } = await clientAuthFetch<
+        PaginatedResponse<StaffProfReq>
+      >(`staff/requests/list/?${params.toString()}`);
 
       if (error) throw new Error(error.message);
-      return data!.data;
+      return data!;
     },
 
-    // The server only fetched the pending list
-    initialData: view === "pending" ? initialData : undefined,
-    initialDataUpdatedAt: Date.now(),
+    initialData: isStartingState ? (initialData ?? undefined) : undefined,
+    initialDataUpdatedAt: isStartingState ? Date.now() : undefined,
   });
+
+  const requests: StaffProfReq[] = queryData?.data ?? [];
+  const totalPages: number = queryData?.total_pages ?? 1;
+  const hasSearch = appliedSearch !== "";
 
   // ── Review mutation ────────────────────────────────────────────────────────
   // One mutation serves every action. An approval also creates a
@@ -235,18 +265,48 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
       toast.success(ACTIONS[action].success);
       setPendingAction(null);
       setSelectedRequest(null);
+      // Reviewing the only request on a later page leaves that page empty, so
+      // step back one page.
+      if (requests.length === 1 && currentPage > 1) {
+        setCurrentPage(currentPage - 1);
+      }
       queryClient.invalidateQueries({
         queryKey: ["staff-requests", SCHOOL_ID],
       });
       if (ACTIONS[action].status === "approved") {
         queryClient.invalidateQueries({ queryKey: ["staff", SCHOOL_ID] });
-        queryClient.invalidateQueries({ queryKey: ["staff-stats", SCHOOL_ID] });
+        queryClient.invalidateQueries({
+          queryKey: ["staff-analytics", SCHOOL_ID],
+        });
       }
     },
     onError: (err) => {
       toast.error(err.message ?? "That action failed. Please try again.");
     },
   });
+
+  // Sends the typed search to the backend. Called by the search button and by
+  // pressing Enter in the input. Starts again from page 1, and does nothing
+  // when the text has not changed.
+  function handleSearchSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    const text = searchInput.trim();
+    if (text === appliedSearch) return;
+    setAppliedSearch(text);
+    setCurrentPage(1);
+  }
+
+  // Clears the input and the applied search, back to page 1.
+  function handleSearchClear() {
+    setSearchInput("");
+    if (appliedSearch !== "") {
+      setAppliedSearch("");
+      setCurrentPage(1);
+    }
+  }
+
+  // True while the typed text differs from the search already applied
+  const hasUnsubmittedSearch = searchInput.trim() !== appliedSearch;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -304,7 +364,10 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
               type="button"
               role="tab"
               aria-selected={view === key}
-              onClick={() => setView(key)}
+              onClick={() => {
+                setView(key);
+                setCurrentPage(1);
+              }}
               className={`cursor-pointer px-3 py-1.5 text-xs rounded-xl border transition-colors ${
                 view === key
                   ? "bg-violet-600 border-violet-600 text-white shadow-sm"
@@ -316,10 +379,79 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
           ))}
         </div>
 
+        {/* Search the open view by the requester's name, email, phone or ID.
+            A form, so Enter and the button both send it. */}
+        <form
+          onSubmit={handleSearchSubmit}
+          className="mt-3 flex gap-2 sm:max-w-sm"
+          role="search"
+          aria-label="Search requests"
+        >
+          <div className="relative flex-1 min-w-0">
+            <Search
+              size={13}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              placeholder="Search name, email, phone, ID…"
+              aria-label="Search requests by name, email, phone or ID"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-8 pr-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+            />
+            {(searchInput || appliedSearch) && (
+              <button
+                type="button"
+                onClick={handleSearchClear}
+                aria-label="Clear search"
+                className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={!hasUnsubmittedSearch}
+            aria-label="Search"
+            title="Search"
+            className="cursor-pointer flex items-center justify-center px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm shadow-violet-200"
+          >
+            <Search size={14} />
+          </button>
+        </form>
+
+        {/* The search the results are scoped to, with a one-click way out */}
+        {appliedSearch && (
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+            <span>Showing results for</span>
+            <span className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1 font-medium">
+              <span className="truncate max-w-55">
+                &ldquo;{appliedSearch}&rdquo;
+              </span>
+              <button
+                type="button"
+                onClick={handleSearchClear}
+                aria-label="Clear search"
+                className="cursor-pointer text-violet-500 hover:text-violet-800 transition-colors"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          </div>
+        )}
+
         {isPending ? (
           <TableLoader rows={4} className="my-6" />
         ) : requests.length === 0 ? (
-          view === "pending" ? (
+          hasSearch ? (
+            <EmptyState
+              variant="search"
+              title="No results found"
+              description={`No requests match "${appliedSearch}".`}
+            />
+          ) : view === "pending" ? (
             <EmptyState variant="requests" />
           ) : (
             <EmptyState variant="requests" {...EMPTY_MESSAGES[view]} />
@@ -432,6 +564,13 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                 </div>
               ))}
             </div>
+
+            {/* ── Paginator ─────────────────────────────────────────── */}
+            <Paginator
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </>
         )}
       </div>

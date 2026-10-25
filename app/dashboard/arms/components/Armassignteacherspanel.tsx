@@ -19,7 +19,8 @@
 //     The list endpoint (which provided selectedArm) does NOT include teachers
 //     in its payload, so without this fetch the cards would always read
 //     "Not assigned" — misleading the user into overwriting real assignments.
-//   - useQuery (teachers) fetches the staff portfolios list. The endpoint is
+//   - useQuery (teachers) fetches the school's active staff, because only
+//     active staff can be assigned as class teachers. The endpoint is
 //     paginated, so we request page-size=100 in a single round-trip. Schools
 //     with more than 100 staff would see a truncated list; that's an
 //     acceptable trade-off for now to keep the panel snappy and avoid
@@ -149,7 +150,7 @@ export default function ArmAssignTeachersPanel({
   } = useQuery<PaginatedResponse<ArmTeacher>>({
     queryKey: ["arm-teacher-options", SCHOOL_ID],
     queryFn: async () => {
-      const url = `staff/portfolios/list/?school-id=${SCHOOL_ID}&page-size=${TEACHERS_PAGE_SIZE}`;
+      const url = `staff/portfolios/list/?school-id=${SCHOOL_ID}&status=active&page-size=${TEACHERS_PAGE_SIZE}`;
       const { data, error } =
         await clientAuthFetch<PaginatedResponse<ArmTeacher>>(url);
       if (error) throw new Error(error.message);
