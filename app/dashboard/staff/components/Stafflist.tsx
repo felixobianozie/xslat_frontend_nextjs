@@ -91,9 +91,9 @@ import FilterPanel, {
 } from "../../components/Filterpanel";
 import ResultCount from "../../components/Resultcount";
 import StaffEmploymentPanel from "./Staffemploymentpanel";
+import StaffStatusBadge from "./Staffstatusbadge";
 import {
   EMPLOYMENT_CHOICES,
-  STAFF_STATUS_BADGES,
   STAFF_STATUS_LABELS,
   STAFF_STATUS_ORDER,
 } from "../staffstatus";
@@ -562,6 +562,7 @@ export default function StaffList({ initialData }: StaffListProps) {
       <StaffActionMenu
         portfolioId={portfolio.id}
         inviteState={portfolio.invite_state}
+        isDeleted={portfolio.deleted}
         onViewProfile={() =>
           router.push(`/dashboard/staff-profile?id=${portfolio.id}`)
         }
@@ -815,7 +816,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                   className="cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
                 >
                   <ShieldCheck size={12} />
-                  <span>Roles &amp; Permissions</span>
+                  <span>Permissions</span>
                 </button>
               </div>
             </div>
@@ -968,7 +969,7 @@ export default function StaffList({ initialData }: StaffListProps) {
 
                             {/* Status */}
                             <td className="px-5">
-                              <StatusBadge status={portfolio.status} />
+                              <StaffStatusBadge status={portfolio.status} />
                             </td>
 
                             {/* Action menu */}
@@ -1070,7 +1071,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                             {portfolio.academic ? "Academic" : "Non-Academic"}
                           </span>
                           {/* Status badge */}
-                          <StatusBadge status={portfolio.status} />
+                          <StaffStatusBadge status={portfolio.status} />
                         </div>
                       </div>
                     );
@@ -1175,20 +1176,6 @@ function ContactCell({
       {/* The contact value itself */}
       <span className="truncate text-slate-700 text-[11px]">{value}</span>
     </div>
-  );
-}
-
-// ── StatusBadge ──────────────────────────────────────────────────────────────
-// A staff member's status, coloured by what it means. Active and inactive
-// staff are still part of the school; the other four have left.
-
-function StatusBadge({ status }: { status: StaffStatus }) {
-  return (
-    <span
-      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${STAFF_STATUS_BADGES[status]}`}
-    >
-      {STAFF_STATUS_LABELS[status]}
-    </span>
   );
 }
 

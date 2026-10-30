@@ -7,13 +7,14 @@
 // profile, and logout shortcuts that mirror the mobile-only buttons in the
 // Topbar.
 //
-// Notification + profile shortcuts have no backend yet — both fire the
-// standard "feature in the works" toast.
+// The notification shortcut has no backend yet, so it fires the standard
+// "feature in the works" toast. The profile shortcut opens the user profile.
 // The logout button opens a confirmation modal and signs the user out
 // (see Logoutbutton.tsx).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Bell, User } from "lucide-react";
+import Link from "next/link";
 import { toast } from "react-toastify";
 
 import LogoutButton from "./Logoutbutton";
@@ -36,14 +37,14 @@ export default function Rightbar() {
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-violet-500 rounded-full ring-2 ring-white" />
         </button>
 
-        {/* Profile — placeholder (no backend yet). */}
-        <button
-          onClick={handlePlaceholder}
-          aria-label="Profile"
+        {/* Profile — opens the user profile. */}
+        <Link
+          href="/dashboard/user-profile"
+          aria-label="My profile"
           className="cursor-pointer p-2 w-fit border border-indigo-300 rounded-md hover:bg-indigo-200 mx-auto block text-black"
         >
           <User size={13} />
-        </button>
+        </Link>
 
         {/* Logout — sits directly after the profile button, mirroring the
             Topbar order. Same visual treatment as the other Rightbar icons

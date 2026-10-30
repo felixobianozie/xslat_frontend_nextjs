@@ -26,7 +26,7 @@
 // roles should cover most access.
 //
 // Saving. The panel loads each selected staff member's current roles and
-// direct permissions (GET staff/portfolios/detail/). The backend replaces a
+// direct permissions (GET staff/portfolios/access/). The backend replaces a
 // staff member's whole role list and whole permission list on every save (PUT
 // staff/portfolios/detail/), so for each staff member the panel reads their
 // lists again, works out the final lists, and saves only the lists that
@@ -86,7 +86,7 @@ const MODES: { id: Mode; label: string }[] = [
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// GET staff/portfolios/detail/. Roles carry their clean names and permissions
+// GET staff/portfolios/access/. Roles carry their clean names and permissions
 // their codenames.
 interface PortfolioAccessResponse {
   message: string;
@@ -178,7 +178,7 @@ function PanelBody({
 
   async function fetchAccess(portfolioId: string): Promise<PortfolioAccess> {
     const { data, error } = await clientAuthFetch<PortfolioAccessResponse>(
-      `staff/portfolios/detail/?portfolio-id=${portfolioId}&school-id=${SCHOOL_ID}`,
+      `staff/portfolios/access/?portfolio-id=${portfolioId}&school-id=${SCHOOL_ID}`,
     );
     if (error) throw new Error(error.message);
 

@@ -7,6 +7,9 @@
 // staff portfolio row:
 //   View Profile        (navigates to /dashboard/staff-profile?id=...)
 //   Roles & Permissions (opens the assignment panel for this staff member)
+//   Set Employment      (opens the employment panel for this staff member)
+//   These three are left out for a removed (soft-deleted) row: the API treats
+//   a removed portfolio as not existing, so there is nothing to open.
 //   Invitation actions  — only for staff whose invitation has not been
 //                         accepted (inviteState is not null):
 //                           Resend Invitation   always
@@ -40,6 +43,9 @@ interface StaffActionMenuProps {
   portfolioId: string;
   /** The staff member's invitation state; null when there is no open invitation. */
   inviteState: InviteState | null;
+  // True for a removed (soft-deleted) row. Its profile, roles and employment
+  // cannot be opened.
+  isDeleted?: boolean;
   onViewProfile: () => void;
   onAssignRoles: () => void;
   onSetEmployment: () => void;
@@ -55,6 +61,7 @@ const PANEL_WIDTH = 192; // w-48 = 12rem = 192px at 16px base
 export default function StaffActionMenu({
   portfolioId,
   inviteState,
+  isDeleted = false,
   onViewProfile,
   onAssignRoles,
   onSetEmployment,
@@ -161,30 +168,34 @@ export default function StaffActionMenu({
             className="bg-white border border-slate-100 rounded-xl shadow-lg py-1"
             onClick={(e) => e.stopPropagation()}
           >
-            <MenuItem
-              icon={<Eye size={13} />}
-              label="View Profile"
-              onClick={() => {
-                onViewProfile();
-                setOpen(false);
-              }}
-            />
-            <MenuItem
-              icon={<ShieldCheck size={13} />}
-              label="Roles & Permissions"
-              onClick={() => {
-                onAssignRoles();
-                setOpen(false);
-              }}
-            />
-            <MenuItem
-              icon={<Briefcase size={13} />}
-              label="Set Employment"
-              onClick={() => {
-                onSetEmployment();
-                setOpen(false);
-              }}
-            />
+            {!isDeleted && (
+              <>
+                <MenuItem
+                  icon={<Eye size={13} />}
+                  label="View Profile"
+                  onClick={() => {
+                    onViewProfile();
+                    setOpen(false);
+                  }}
+                />
+                <MenuItem
+                  icon={<ShieldCheck size={13} />}
+                  label="Roles & Permissions"
+                  onClick={() => {
+                    onAssignRoles();
+                    setOpen(false);
+                  }}
+                />
+                <MenuItem
+                  icon={<Briefcase size={13} />}
+                  label="Set Employment"
+                  onClick={() => {
+                    onSetEmployment();
+                    setOpen(false);
+                  }}
+                />
+              </>
+            )}
             {inviteState && (
               <>
                 <MenuItem

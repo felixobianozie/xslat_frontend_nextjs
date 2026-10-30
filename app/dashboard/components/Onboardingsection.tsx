@@ -15,7 +15,7 @@
 //
 // Data:
 //   * userId is read from the session JWT (session.accessClaims.user_id).
-//   * The user record is fetched via GET users/detail/?id=<userId> — gives us
+//   * The user record is fetched via GET users/me/ — gives us
 //     the email, phone, and per-channel validation booleans.
 //
 // Slide panels follow the existing project pattern: the card grid and the
@@ -70,9 +70,8 @@ export default function OnboardingSection() {
   const { data: userData, isError } = useQuery<ApiEnvelope<CurrentUser>>({
     queryKey: ["user", userId],
     queryFn: async () => {
-      const { data, error } = await clientAuthFetch<ApiEnvelope<CurrentUser>>(
-        `users/detail/?id=${userId}`,
-      );
+      const { data, error } =
+        await clientAuthFetch<ApiEnvelope<CurrentUser>>("users/me/");
       if (error) throw new Error(error.message);
       return data!;
     },

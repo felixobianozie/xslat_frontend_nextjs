@@ -11,14 +11,15 @@
 //    "<term name> - <session name>". Cache key ["school", SCHOOL_ID] matches the key
 //    used by other components (e.g. Studentassignarmpanel), so this is a
 //    cache hit after the first request.
-//  * The bell and profile buttons still have no backend, so they surface
-//    the standard "feature in the works" toast.
+//  * The bell button still has no backend, so it surfaces the standard
+//    "feature in the works" toast. The profile icon opens the user profile.
 //  * The logout button opens a confirmation modal; on confirm it calls
 //    NextAuth's signOut() — see Logoutbutton.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Bell, Calendar, Menu, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { toast } from "react-toastify";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
@@ -79,7 +80,7 @@ export default function Topbar({
       ? `${currentTerm.name} - ${currentTerm.session.name}`
       : "No active term";
 
-  // Shared handler for the bell + profile placeholder buttons.
+  // Handler for the bell placeholder button.
   const handlePlaceholder = () => toast.info(FEATURE_IN_WORKS);
 
   return (
@@ -136,14 +137,14 @@ export default function Topbar({
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-violet-500 rounded-full ring-2 ring-white" />
         </button>
 
-        {/* Profile shortcut — placeholder (no backend yet). */}
-        <button
-          onClick={handlePlaceholder}
-          aria-label="Profile"
+        {/* Profile shortcut — opens the user profile. */}
+        <Link
+          href="/dashboard/user-profile"
+          aria-label="My profile"
           className="cursor-pointer p-2 rounded-xl hover:bg-violet-50 text-slate-400 hover:text-violet-600 transition-colors lg:hidden"
         >
           <User size={18} />
-        </button>
+        </Link>
 
         {/* Logout — placed directly after the profile button, mobile only.
             On lg+ the Rightbar hosts its own logout button. */}
