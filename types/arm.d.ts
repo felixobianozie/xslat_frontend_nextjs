@@ -9,7 +9,6 @@
 //
 //   ArmSerializer         (academics.serializers) — arm/detail/
 //   SubjectSerializer     (academics.serializers) — subject/list/
-//   AssessmentSerializer  (academics.serializers) — nested under arm.assessments
 //
 // Naming: every new type starts with `Arm…` so it doesn't collide with the
 // project's existing globals (Subject, StudentUser, staffUser, etc.).
@@ -202,81 +201,15 @@ interface ArmSubject {
   excluded_students: ArmStudent[];
 }
 
-// ── Assessment record (per student, per arm) ─────────────────────────────────
-// Returned as part of arm/detail/ via the AssessmentSerializer. Each Assessment
-// has at most one cognitive_record per subject the student takes; one
-// affective_record total (with N behaviour-scores inside); and one
-// psychomotor_record total (with N activity-scores inside).
+// ── Subject scores (per student, for one subject) ───────────────────────────
+// Returned by GET arm/subject-scores/ (see lib/Usearmsubjectscores.ts). One row
+// for each student who has a record for the subject; `scores` is keyed by the
+// cognitive unit's id. The arm's own detail (arm/detail/) does not carry the
+// students' assessments.
 
-interface ArmCognitiveScoreEntry {
-  id: string;
-  // Unit reference — `unit.id` is what we key on when looking up a cell value.
-  unit: {
-    id: string;
-    name?: string;
-    abbr?: string;
-    display_order?: number;
-    max_score?: number;
-  };
-  score: number;
-}
-
-interface ArmCognitiveRecord {
-  id: string;
-  // Subject reference — `subject.id` is how we filter records to the
-  // currently-selected subject in the Subjects tab.
-  subject: {
-    id: string;
-    definition?: { id: string; name: string; abbr: string };
-  };
-  scores: ArmCognitiveScoreEntry[];
-}
-
-interface ArmAffectiveScoreEntry {
-  id: string;
-  behaviour: {
-    id: string;
-    name?: string;
-    abbr?: string;
-    display_order?: number;
-    max_score?: number;
-  };
-  score: number;
-}
-
-interface ArmAffectiveRecord {
-  id: string;
-  scores: ArmAffectiveScoreEntry[];
-}
-
-interface ArmPsychomotorScoreEntry {
-  id: string;
-  activity: {
-    id: string;
-    name?: string;
-    abbr?: string;
-    display_order?: number;
-    max_score?: number;
-  };
-  score: number;
-}
-
-interface ArmPsychomotorRecord {
-  id: string;
-  scores: ArmPsychomotorScoreEntry[];
-}
-
-interface ArmAssessmentRecord {
-  id: string;
-  // Backend AssessmentSerializer's default representation for the `student`
-  // FK is the full nested object (id + identity fields). UI code reads
-  // `record.student.first_name` directly.
-  student: ArmStudent;
-  teachers_remark?: string | null;
-  supervisors_remark?: string | null;
-  cognitive_records: ArmCognitiveRecord[];
-  affective_records: ArmAffectiveRecord[];
-  psychomotor_records: ArmPsychomotorRecord[];
+interface ArmSubjectScoresRow {
+  student_id: string;
+  scores: Record<string, number>;
 }
 
 // ── ClassArm augmentation ────────────────────────────────────────────────────
@@ -296,11 +229,4 @@ interface ClassArm {
   // Null when the arm has no rule configured — the Pass Rule tab surfaces a
   // CTA in that case.
   pass_rule?: ArmPassRule | null;
-
-  // Populated by arm/detail/. Backend related_name is "assessments" (plural),
-  // matching the JSON key in the response. Students with no recorded scores
-  // simply don't appear in the array; the view layer joins against the class
-  // roster (filtered by Subject.excluded_students) to render blank cells for
-  // students who offer the subject but haven't been scored yet.
-  assessments?: ArmAssessmentRecord[];
 }

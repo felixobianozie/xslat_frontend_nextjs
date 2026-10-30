@@ -11,9 +11,12 @@
 // the ["arm-detail", armId] cache to trigger a refetch through this provider.
 //
 // Backend reference (GET arm/detail/?id=…&school-id=…):
-//   Returns the full ClassArm with its nested level → section → term → session
+//   Returns the ClassArm with its nested level → section → term → session
 //   → school chain populated. The chain is needed by downstream tabs (for the
-//   term-id required by subject/list/, etc.).
+//   term-id required by subject/list/, etc.). It does not carry the students'
+//   assessments: the score panels load one subject's scores when they open
+//   (see lib/Usearmsubjectscores.ts), so the arm opens quickly however many
+//   scores have been recorded.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createContext, useContext, ReactNode } from "react";

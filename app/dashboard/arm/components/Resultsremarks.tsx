@@ -171,11 +171,8 @@ export default function ResultsRemarks({
           ? "Teacher's comment saved."
           : "Principal's comment saved.",
       );
-      // Refresh arm-detail (raw arm.assessments) AND the compute payload
-      // (which carries teachers_remark / supervisors_remark alongside the
-      // aggregated grades). Both queries hold a copy of the remark, so
-      // both need invalidating for the UI to stay consistent.
-      queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      // Refresh the compute payload, which carries teachers_remark /
+      // supervisors_remark alongside the aggregated grades.
       queryClient.invalidateQueries({
         queryKey: ["arm-assessment-compute", armId],
       });

@@ -23,10 +23,10 @@
 //   subject.excluded_students.
 //
 // Score lookup:
-//   For each offering student we look up their assessment row in
-//   arm.assessments (plural — that's the backend's JSON key), then find the
-//   cognitive_record whose subject.id matches the selected subject. Missing
-//   score = blank cell. -1 = absent (rendered as "Abs").
+//   The subject's saved scores load from GET arm/subject-scores/ when the
+//   panel opens (useArmSubjectScores): one row for each student who has a
+//   record for the subject, with their score for each unit. A student with no
+//   row = blank cell. -1 = absent (rendered as "Abs").
 //
 // Empty states:
 //   - cognitive_assessment_format missing on the arm  → arm config incomplete
@@ -38,6 +38,7 @@ import { ChevronLeft, Pencil } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { useArmResultRoster } from "@/lib/Usearmresultroster";
+import { useArmSubjectScores } from "@/lib/Usearmsubjectscores";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import EmptyState from "../../components/Emptystate";
 
@@ -90,6 +91,24 @@ export default function ViewAssessmentPanel({
     error: rosterError,
   } = useArmResultRoster(armId, show);
 
+  // ── Saved scores for this subject ─────────────────────────────────────────
+  const {
+    data: scoresData,
+    isLoading: scoresLoading,
+    isError: scoresIsError,
+    error: scoresError,
+  } = useArmSubjectScores(armId, subject?.id ?? "", show);
+
+  useEffect(() => {
+    if (scoresIsError && scoresError) {
+      toast.error(
+        scoresError instanceof Error
+          ? scoresError.message
+          : "Failed to load the saved scores.",
+      );
+    }
+  }, [scoresIsError, scoresError]);
+
   useEffect(() => {
     if (rosterIsError && rosterError) {
       toast.error(
@@ -116,24 +135,16 @@ export default function ViewAssessmentPanel({
     const roster = rosterData?.data ?? [];
     const offering = roster.filter((s) => !excluded.has(s.id));
 
-    // Build unitId → score lookup per student from arm.assessments. Students
-    // without an assessment record (or without a cognitive_record for this
-    // subject) stay absent from the map and render blank cells.
+    // Build the unitId → score lookup per student from the subject's saved
+    // scores. Students with no record for this subject stay absent from the
+    // map and render blank cells.
     const scoresMap: Record<string, Record<string, number>> = {};
-    for (const record of arm?.assessments ?? []) {
-      const cog = record.cognitive_records.find(
-        (r) => r.subject.id === subject.id,
-      );
-      if (!cog) continue;
-      const lookup: Record<string, number> = {};
-      for (const entry of cog.scores) {
-        lookup[entry.unit.id] = entry.score;
-      }
-      scoresMap[record.student.id] = lookup;
+    for (const saved of scoresData?.data ?? []) {
+      scoresMap[saved.student_id] = saved.scores;
     }
 
     return { offeringStudents: offering, scoresByStudent: scoresMap };
-  }, [arm, subject, rosterData]);
+  }, [subject, rosterData, scoresData]);
 
   const armLabel = arm
     ? `${arm.level.section.abbr} ${arm.level.abbr} ${arm.abbr}`
@@ -188,7 +199,7 @@ export default function ViewAssessmentPanel({
               title="Arm configuration incomplete"
               description="A cognitive assessment format hasn't been set up for this arm yet. Configure one before recording or viewing scores."
             />
-          ) : rosterPending ? (
+          ) : rosterPending || scoresLoading ? (
             <div className="p-5">
               <p className="text-xs text-slate-400">Loading roster…</p>
             </div>

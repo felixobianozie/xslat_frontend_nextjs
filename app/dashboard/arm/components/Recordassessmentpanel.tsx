@@ -33,8 +33,9 @@
 // Data sources:
 //   - Class roster: ["arm-students", armId, …] cache (shared with
 //     ClassMembersTab so the cache is usually hot already).
-//   - Existing scores: arm.assessments from the upstream arm-detail fetch —
-//     used to seed initial cell values. Students without a record start blank.
+//   - Existing scores: GET arm/subject-scores/ for this subject only, loaded
+//     when the panel opens (useArmSubjectScores) — used to seed initial cell
+//     values. Students without a record start blank.
 //
 // Submit (PUT arm/detail/scores/):
 //   {
@@ -64,6 +65,7 @@ import { toast } from "react-toastify";
 
 import { apiErrorText } from "@/lib/Apierrortext";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
+import { useArmSubjectScores } from "@/lib/Usearmsubjectscores";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
 import EmptyState from "../../components/Emptystate";
@@ -151,6 +153,14 @@ export default function RecordAssessmentPanel({
 
   const rosterStudents = rosterData?.data ?? [];
 
+  // The scores already recorded for this subject. Loaded when the panel
+  // opens, for this subject only.
+  const { data: scoresData, isLoading: scoresLoading } = useArmSubjectScores(
+    armId,
+    subject?.id ?? "",
+    show,
+  );
+
   // Filter the roster down to students who actually offer this subject. A
   // student offers a subject when their id is NOT in subject.excluded_students.
   // Done in a memo so the Set is built once per roster/subject change.
@@ -167,30 +177,27 @@ export default function RecordAssessmentPanel({
     const rows: Record<string, ScoreRow> = {};
     if (!subject) return rows;
 
-    // Lookup table: studentId → cognitive_record for the selected subject.
-    const cogByStudent: Record<string, ArmCognitiveRecord | undefined> = {};
-    for (const record of arm?.assessments ?? []) {
-      const cog = record.cognitive_records.find(
-        (r) => r.subject.id === subject.id,
-      );
-      if (cog) cogByStudent[record.student.id] = cog;
+    // Lookup table: studentId → { unitId: score } for the selected subject.
+    const savedByStudent: Record<string, Record<string, number>> = {};
+    for (const saved of scoresData?.data ?? []) {
+      savedByStudent[saved.student_id] = saved.scores;
     }
 
     // Seed every offering student — even those without records yet — so the
     // table row appears with blank cells. Students who don't offer the subject
     // are excluded entirely.
     for (const student of offeringStudents) {
-      const cog = cogByStudent[student.id];
+      const saved = savedByStudent[student.id];
       const row: ScoreRow = {};
       for (const unit of units) {
-        const entry = cog?.scores.find((s) => s.unit.id === unit.id);
-        row[unit.id] = entry ? entry.score : "";
+        const score = saved?.[unit.id];
+        row[unit.id] = score !== undefined ? score : "";
       }
       rows[student.id] = row;
     }
 
     return rows;
-  }, [arm, subject, offeringStudents, units]);
+  }, [scoresData, subject, offeringStudents, units]);
 
   // Editable state + touched-row tracking.
   const [rowData, setRowData] = useState<Record<string, ScoreRow>>({});
@@ -309,8 +316,11 @@ export default function RecordAssessmentPanel({
 
     onSuccess: () => {
       toast.success("Assessment saved.");
-      // Refresh the arm detail so arm.assessments reflects the new scores.
-      queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      // Refresh the saved scores so the table, and the view panel, show what
+      // was just saved.
+      queryClient.invalidateQueries({
+        queryKey: ["arm-subject-scores", armId],
+      });
       // Also invalidate the compute payload — the Results tab reads its
       // per-subject totals, grades, averages, and positions from there,
       // and any of those may have moved after this save.
@@ -387,7 +397,7 @@ export default function RecordAssessmentPanel({
               title="Arm configuration incomplete"
               description="A cognitive assessment format hasn't been set up for this arm yet. Configure one before recording scores."
             />
-          ) : rosterLoading ? (
+          ) : rosterLoading || scoresLoading ? (
             <div className="p-5">
               <p className="text-xs text-slate-400">Loading roster…</p>
             </div>
