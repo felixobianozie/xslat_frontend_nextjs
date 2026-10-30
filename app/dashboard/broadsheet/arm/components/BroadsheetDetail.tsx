@@ -17,11 +17,17 @@
 
 import { useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
-import { Download, Printer, Search } from "lucide-react";
+import { ArrowUpDown, Check, Download, Printer, Search } from "lucide-react";
 import { toast } from "react-toastify";
 
+import DropdownPanel from "../../../components/Dropdownpanel";
 import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
+import {
+  BROADSHEET_SORT_OPTIONS,
+  DEFAULT_BROADSHEET_SORT,
+  type BroadsheetSort,
+} from "../broadsheetsort";
 import BroadsheetRecordSelector, {
   type BroadsheetView,
 } from "./BroadsheetRecordSelector";
@@ -37,6 +43,15 @@ export default function BroadsheetDetail() {
   // ── Local UI state ───────────────────────────────────────────────────
   const [view, setView] = useState<BroadsheetView>("cognitive");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // The order of the students in every table and in the printout. The menu
+  // hangs from its button in a portal, so a short table cannot clip it.
+  const [sort, setSort] = useState<BroadsheetSort>(DEFAULT_BROADSHEET_SORT);
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortTriggerRef = useRef<HTMLButtonElement>(null);
+  const activeSortLabel =
+    BROADSHEET_SORT_OPTIONS.find((option) => option.value === sort)?.label ??
+    "Sort";
 
   // Ref attached to the hidden PrintableBroadsheet. react-to-print uses this
   // to clone the subtree into a print window. The v3+ API uses `contentRef`
@@ -104,6 +119,61 @@ export default function BroadsheetDetail() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Sort — overall total or gender. Applies to every table and to
+                what is printed. */}
+            <div className="relative">
+              <button
+                ref={sortTriggerRef}
+                type="button"
+                onClick={() => setSortOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={sortOpen}
+                className={`cursor-pointer flex items-center justify-center gap-1.5 px-3 py-2 text-xs border rounded-xl transition-colors ${
+                  sort !== DEFAULT_BROADSHEET_SORT
+                    ? "border-violet-400 bg-violet-50 text-violet-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:bg-violet-50"
+                }`}
+              >
+                <ArrowUpDown size={12} />
+                <span className="hidden sm:inline">{activeSortLabel}</span>
+                <span className="sm:hidden">Sort</span>
+              </button>
+
+              <DropdownPanel
+                open={sortOpen}
+                onClose={() => setSortOpen(false)}
+                anchorRef={sortTriggerRef}
+                width={224}
+                align="right"
+                label="Sort students"
+              >
+                <div className="py-1">
+                  {BROADSHEET_SORT_OPTIONS.map((option) => {
+                    const isActive = sort === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setSort(option.value);
+                          setSortOpen(false);
+                        }}
+                        className={`cursor-pointer w-full flex items-center justify-between px-4 py-2 text-left text-xs transition-colors ${
+                          isActive
+                            ? "bg-violet-50 font-semibold text-violet-700"
+                            : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        {isActive && <Check size={12} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </DropdownPanel>
+            </div>
+
             <button
               type="button"
               onClick={() => handlePrint()}
@@ -131,13 +201,13 @@ export default function BroadsheetDetail() {
           mounts when active — keeps DOM size and React reconciliation light
           when there are 200+ students × 10+ subjects. */}
       {view === "cognitive" && (
-        <BroadsheetCognitiveView searchQuery={searchQuery} />
+        <BroadsheetCognitiveView searchQuery={searchQuery} sort={sort} />
       )}
       {view === "affective" && (
-        <BroadsheetAffectiveView searchQuery={searchQuery} />
+        <BroadsheetAffectiveView searchQuery={searchQuery} sort={sort} />
       )}
       {view === "psychomotor" && (
-        <BroadsheetPsychomotorView searchQuery={searchQuery} />
+        <BroadsheetPsychomotorView searchQuery={searchQuery} sort={sort} />
       )}
 
       {/* ── Grading reference ───────────────────────────────────────── */}
@@ -147,7 +217,7 @@ export default function BroadsheetDetail() {
       {/* Kept in the DOM (not display:none) so refs and layout work, but
           collapsed to zero height so it doesn't take up screen space. */}
       <div className="h-0 overflow-hidden" aria-hidden="true">
-        <PrintableBroadsheet ref={printRef} />
+        <PrintableBroadsheet ref={printRef} sort={sort} />
       </div>
     </div>
   );

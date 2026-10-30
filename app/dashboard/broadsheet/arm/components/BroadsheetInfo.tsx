@@ -112,7 +112,10 @@ export default function BroadsheetInfo() {
               legible on narrow viewports where the card is one column. */}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <BroadsheetStatusBadge status={arm.broadsheet} />
-            <TermResultsTag status={term?.results_status} />
+            <TermResultsTag
+              status={term?.results_status}
+              termName={term?.name}
+            />
           </div>
         </div>
       </div>
@@ -188,21 +191,19 @@ export default function BroadsheetInfo() {
 
 // ── TermResultsTag ───────────────────────────────────────────────────────
 // Renders as a small pill next to the broadsheet-status badge on the
-// identity card. Binary display:
+// identity card. It shows the publish state of the arm's TERM, which the arm
+// detail returns as the term's `results_status`. Binary display:
 //   - "published" → green Published pill
-//   - anything else (including undefined/missing on the wire) → gray
-//     Unpublished pill.
-//
-// Backend caveat: the current ArmDetailView doesn't include
-// "results_status" in its include_term_fields tuple, so this component
-// will render "Unpublished" for every arm until that tuple is updated
-// on the server. The graceful fallback here means we ship no broken UI
-// in the interim; adding "results_status" to the include tuple is a
-// one-line backend edit.
+//   - anything else ("nota", "computing") → gray Unpublished pill.
+// A term is published once every arm in it is approved and the results are
+// published from the broadsheet list, so every arm of a term shows the same
+// state. The pill's tooltip names the term it speaks for.
 function TermResultsTag({
   status,
+  termName,
 }: {
   status?: "nota" | "computing" | "published";
+  termName?: string;
 }) {
   const isPublished = status === "published";
   const label = isPublished ? "Published" : "Unpublished";
@@ -215,8 +216,11 @@ function TermResultsTag({
     : "bg-slate-100 text-slate-600 border-slate-200";
   const dotClasses = isPublished ? "bg-emerald-500" : "bg-slate-400";
 
+  const termLabel = termName ? `${termName} Term` : "The term";
+
   return (
     <span
+      title={`${termLabel} results: ${label}`}
       className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${pillClasses}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotClasses}`} />

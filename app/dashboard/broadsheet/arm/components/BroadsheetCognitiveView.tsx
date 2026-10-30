@@ -33,6 +33,7 @@ import { Fragment, useMemo, useState } from "react";
 import EmptyState from "../../../components/Emptystate";
 import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
+import { sortStudents, type BroadsheetSort } from "../broadsheetsort";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
 
@@ -45,10 +46,13 @@ interface ActiveModalState {
 
 interface BroadsheetCognitiveViewProps {
   searchQuery: string;
+  // The order chosen with the Sort button.
+  sort: BroadsheetSort;
 }
 
 export default function BroadsheetCognitiveView({
   searchQuery,
+  sort,
 }: BroadsheetCognitiveViewProps) {
   const {
     arm,
@@ -91,6 +95,21 @@ export default function BroadsheetCognitiveView({
       );
     });
   }, [students, searchQuery]);
+
+  // Overall total of each student, for sorting: the academic total.
+  const totals = useMemo(() => {
+    const byId: Record<string, number> = {};
+    for (const [studentId, result] of Object.entries(classResult.students)) {
+      byId[studentId] = result.total_score;
+    }
+    return byId;
+  }, [classResult]);
+
+  // The students in the order chosen with the Sort button.
+  const sortedStudents = useMemo(
+    () => sortStudents(visibleStudents, sort, totals),
+    [visibleStudents, sort, totals],
+  );
 
   if (!arm) return null;
 
@@ -182,7 +201,7 @@ export default function BroadsheetCognitiveView({
                 <ColumnHeader
                   key={subject.id}
                   colSpan={units.length + 2}
-                  extraClassName="border-l border-l-indigo-300"
+                  extraClassName="border-l border-l-indigo-300 shadow-[inset_0_-1px_0_0_#a5b4fc]"
                 >
                   {subject.definition.name}
                 </ColumnHeader>
@@ -220,7 +239,7 @@ export default function BroadsheetCognitiveView({
           </thead>
 
           <tbody>
-            {visibleStudents.map((student, rowIndex) => {
+            {sortedStudents.map((student, rowIndex) => {
               const studentResult = classResult.students[student.id];
 
               const gradeTally = (() => {
@@ -269,8 +288,9 @@ export default function BroadsheetCognitiveView({
                     {rowIndex + 1}
                   </td>
                   <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44">
-                    {student.last_name} {student.first_name}{" "}
+                    {student.first_name}{" "}
                     {student.middle_name ? `${student.middle_name} ` : ""}
+                    {student.last_name}
                   </td>
                   <td className="px-2 py-2 text-slate-500 whitespace-nowrap">
                     {student.public_id ?? "—"}

@@ -28,6 +28,7 @@ import { Fragment, useMemo, useState } from "react";
 import EmptyState from "../../../components/Emptystate";
 import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
+import { sortStudents, type BroadsheetSort } from "../broadsheetsort";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
 
@@ -38,10 +39,13 @@ interface ActiveModalState {
 
 interface BroadsheetAffectiveViewProps {
   searchQuery: string;
+  // The order chosen with the Sort button.
+  sort: BroadsheetSort;
 }
 
 export default function BroadsheetAffectiveView({
   searchQuery,
+  sort,
 }: BroadsheetAffectiveViewProps) {
   const { arm, students, classResult, studentsPending, classResultPending } =
     useBroadsheetDetails();
@@ -84,6 +88,13 @@ export default function BroadsheetAffectiveView({
     }
     return totalsById;
   }, [students, classResult]);
+
+  // The students in the order chosen with the Sort button. Sorting by overall
+  // total uses the total shown in this table.
+  const sortedStudents = useMemo(
+    () => sortStudents(visibleStudents, sort, affectiveTotals),
+    [visibleStudents, sort, affectiveTotals],
+  );
 
   if (!arm) return null;
 
@@ -143,7 +154,7 @@ export default function BroadsheetAffectiveView({
                 <ColumnHeader
                   key={b.id}
                   colSpan={2}
-                  extraClassName="border-l border-l-rose-300"
+                  extraClassName="border-l border-l-rose-300 shadow-[inset_0_-1px_0_0_#fda4af]"
                 >
                   {b.behaviour}
                 </ColumnHeader>
@@ -173,7 +184,7 @@ export default function BroadsheetAffectiveView({
           </thead>
 
           <tbody>
-            {visibleStudents.map((student, rowIndex) => {
+            {sortedStudents.map((student, rowIndex) => {
               const studentResult = classResult.students[student.id];
               const total = affectiveTotals[student.id] ?? 0;
 

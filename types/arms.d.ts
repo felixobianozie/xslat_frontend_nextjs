@@ -42,12 +42,10 @@ interface ArmTerm {
   name: string;
   abbr: string;
   session: ArmSession;
-  // Mirrors Term.RESULT_STATUS on the backend model. Optional here because
-  // whether it surfaces on the wire depends on the caller's
-  // include_term_fields context. ArmDetailView's context does not
-  // include "results_status", so components that want to render
-  // the term's publish state should treat a missing value as "unpublished"
-  // (i.e. anything other than "published" is treated as not-yet-published).
+  // Mirrors Term.RESULT_STATUS on the backend model: whether the term's
+  // results are published. ArmDetailView returns it, so the broadsheet page
+  // can show the Published tag. Optional because other endpoints that return
+  // an arm's term leave it out; treat a missing value as not yet published.
   results_status?: "nota" | "computing" | "published";
 }
 

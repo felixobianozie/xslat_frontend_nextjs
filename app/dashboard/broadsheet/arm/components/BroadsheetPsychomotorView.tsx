@@ -21,6 +21,7 @@ import { Fragment, useMemo, useState } from "react";
 import EmptyState from "../../../components/Emptystate";
 import TableLoader from "../../../components/Tableloader";
 import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
+import { sortStudents, type BroadsheetSort } from "../broadsheetsort";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
 
@@ -31,10 +32,13 @@ interface ActiveModalState {
 
 interface BroadsheetPsychomotorViewProps {
   searchQuery: string;
+  // The order chosen with the Sort button.
+  sort: BroadsheetSort;
 }
 
 export default function BroadsheetPsychomotorView({
   searchQuery,
+  sort,
 }: BroadsheetPsychomotorViewProps) {
   const { arm, students, classResult, studentsPending, classResultPending } =
     useBroadsheetDetails();
@@ -75,6 +79,13 @@ export default function BroadsheetPsychomotorView({
     }
     return totalsById;
   }, [students, classResult]);
+
+  // The students in the order chosen with the Sort button. Sorting by overall
+  // total uses the total shown in this table.
+  const sortedStudents = useMemo(
+    () => sortStudents(visibleStudents, sort, psyTotals),
+    [visibleStudents, sort, psyTotals],
+  );
 
   if (!arm) return null;
 
@@ -132,7 +143,7 @@ export default function BroadsheetPsychomotorView({
                 <ColumnHeader
                   key={a.id}
                   colSpan={2}
-                  extraClassName="border-l border-l-amber-300"
+                  extraClassName="border-l border-l-amber-300 shadow-[inset_0_-1px_0_0_#fcd34d]"
                 >
                   {a.activity}
                 </ColumnHeader>
@@ -161,7 +172,7 @@ export default function BroadsheetPsychomotorView({
           </thead>
 
           <tbody>
-            {visibleStudents.map((student, rowIndex) => {
+            {sortedStudents.map((student, rowIndex) => {
               const studentResult = classResult.students[student.id];
               const total = psyTotals[student.id] ?? 0;
 
