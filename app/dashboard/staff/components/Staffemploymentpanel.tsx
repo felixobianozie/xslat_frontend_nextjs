@@ -27,6 +27,7 @@ import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../components/Buttonloader";
 import { inGroupsOf } from "../staffaccess";
 import { EMPLOYMENT_CHOICES } from "../staffstatus";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,8 +59,7 @@ interface StaffEmploymentPanelProps {
 }
 
 function staffName(portfolio: StaffPortfolio): string {
-  const { first_name, last_name } = portfolio.staff_profile.user;
-  return `${first_name} ${last_name}`;
+  return personName(portfolio.staff_profile.user);
 }
 
 function plural(count: number, one: string, many: string): string {

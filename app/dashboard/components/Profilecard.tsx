@@ -9,7 +9,6 @@
 //   DetailRow       One label and its value. The label sits above the value on
 //                   a phone and beside it from sm up. An empty value shows "—".
 //   VerifiedBadge   "Verified" or "Not verified", for an email or a phone.
-//   displayName     "First Middle Last", leaving out what is empty.
 //   joinAddress     An address on one line, leaving out what is empty.
 //   formatProfileDate  A date as "5 Mar 2026", or "—" when there is none.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,14 +77,6 @@ export function VerifiedBadge({ verified }: { verified: boolean }) {
       {verified ? "Verified" : "Not verified"}
     </span>
   );
-}
-
-export function displayName(
-  first: string,
-  middle: string,
-  last: string,
-): string {
-  return [first, middle, last].filter((part) => part.trim()).join(" ");
 }
 
 // An address as one line: "12 Example Road, Port Harcourt, Rivers, Nigeria".

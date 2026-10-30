@@ -37,6 +37,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../components/Buttonloader";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -84,8 +85,7 @@ function formatArm(arm: ClassArm | null): string {
 // Display helper: builds a teacher's full name from the nested user object.
 function teacherName(teacher: ArmTeacher | null | undefined): string {
   if (!teacher) return "—";
-  const u = teacher.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(teacher.staff_profile.user);
 }
 
 export default function ArmAssignTeachersPanel({
@@ -414,7 +414,7 @@ function TeacherSelect({
           const u = teacher.staff_profile.user;
           return (
             <option key={teacher.id} value={teacher.id}>
-              {u.first_name} {u.last_name}
+              {personName(u)}
               {u.public_id ? ` — ${u.public_id}` : ""}
             </option>
           );

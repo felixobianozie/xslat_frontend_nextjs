@@ -70,6 +70,7 @@ import { useArmDetails } from "../context/Armdetailsprovider";
 import ButtonLoader from "../../components/Buttonloader";
 import EmptyState from "../../components/Emptystate";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -461,8 +462,7 @@ export default function RecordAssessmentPanel({
                                 : "text-slate-800"
                             }`}
                           >
-                            {student.last_name} {student.first_name}{" "}
-                            {student?.middle_name ?? ""}
+                            {personName(student)} {student?.middle_name ?? ""}
                           </p>
                           {(student.public_id || student.gender) && (
                             <p className="text-[11px] text-slate-400 truncate transition-colors group-focus-within:text-violet-500 flex items-center gap-1.5">
@@ -635,7 +635,7 @@ export default function RecordAssessmentPanel({
                           <td className="py-2.5 pr-4">
                             <div className="flex flex-col">
                               <span className="text-slate-800 transition-colors group-focus-within:text-violet-700 group-focus-within:font-semibold">
-                                {student.last_name} {student.first_name}{" "}
+                                {personName(student)}{" "}
                                 {student?.middle_name ?? ""}
                               </span>
                               {(student.public_id || student.gender) && (

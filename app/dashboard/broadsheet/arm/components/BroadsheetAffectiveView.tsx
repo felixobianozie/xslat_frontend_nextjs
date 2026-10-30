@@ -31,6 +31,7 @@ import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
 import { sortStudents, type BroadsheetSort } from "../broadsheetsort";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
+import { matchesPersonSearch, personName } from "@/lib/Personname";
 
 interface ActiveModalState {
   variant: StudentInfoVariant;
@@ -58,17 +59,8 @@ export default function BroadsheetAffectiveView({
   }, [arm?.affective_assessment_format]);
 
   const visibleStudents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter((s) => {
-      const fullName = `${s.first_name} ${s.middle_name ?? ""} ${s.last_name}`
-        .toLowerCase()
-        .replace(/\s+/g, " ");
-      return (
-        fullName.includes(q) ||
-        (s.public_id?.toLowerCase().includes(q) ?? false)
-      );
-    });
+    if (!searchQuery.trim()) return students;
+    return students.filter((s) => matchesPersonSearch(s, searchQuery));
   }, [students, searchQuery]);
 
   // Per-student affective overall (sum of all behaviour scores) — drives
@@ -228,9 +220,7 @@ export default function BroadsheetAffectiveView({
                     {rowIndex + 1}
                   </td>
                   <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44">
-                    {student.first_name}{" "}
-                    {student.middle_name ? `${student.middle_name} ` : ""}
-                    {student.last_name}
+                    {personName(student)}
                   </td>
 
                   {behaviours.map((b) => {

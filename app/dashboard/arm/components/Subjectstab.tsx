@@ -35,6 +35,7 @@ import RemoveSubjectTeachersPanel from "./Removesubjectteacherspanel";
 import ViewAssessmentPanel from "./Viewassessmentpanel";
 import RecordAssessmentPanel from "./Recordassessmentpanel";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 // Pull a teacher's display name from a nested StaffPortfolio.
 function teacherDisplayName(t: ArmTeacher): string {
   const u = t.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(u);
 }
 
 export default function SubjectsTab() {

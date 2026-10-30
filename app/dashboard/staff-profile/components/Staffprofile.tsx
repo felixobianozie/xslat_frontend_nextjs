@@ -31,13 +31,13 @@ import {
   DetailRow,
   ProfileSection,
   VerifiedBadge,
-  displayName,
   formatProfileDate,
   joinAddress,
 } from "../../components/Profilecard";
 import ProfilePhoto from "../../components/Profilephoto";
 import StaffStatusBadge from "../../staff/components/Staffstatusbadge";
 import { EMPLOYMENT_CHOICES } from "../../staff/staffstatus";
+import { personName } from "@/lib/Personname";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
@@ -65,7 +65,9 @@ const INVITE_LABELS: Record<InviteState, string> = {
 };
 
 function employmentLabel(value: StaffProfileDetails["employment"]): string {
-  return EMPLOYMENT_CHOICES.find((choice) => choice.value === value)?.label ?? "—";
+  return (
+    EMPLOYMENT_CHOICES.find((choice) => choice.value === value)?.label ?? "—"
+  );
 }
 
 interface StaffProfileProps {
@@ -84,10 +86,11 @@ export default function StaffProfile({
   // server data is fresh, so it does not refetch the moment the page opens.
   const [mountedAt] = useState(() => Date.now());
 
-  const { data: profile, isPending, error } = useQuery<
-    StaffProfileDetails,
-    ProfileLoadError
-  >({
+  const {
+    data: profile,
+    isPending,
+    error,
+  } = useQuery<StaffProfileDetails, ProfileLoadError>({
     queryKey: ["staff", SCHOOL_ID, "profile", portfolioId],
 
     queryFn: async () => {
@@ -161,7 +164,7 @@ export default function StaffProfile({
 
   // ── Profile ────────────────────────────────────────────────────────────────
   const user = profile.staff_profile.user;
-  const fullName = displayName(user.first_name, user.middle_name, user.last_name);
+  const fullName = personName(user);
 
   return (
     <div className="pb-10">
@@ -174,7 +177,10 @@ export default function StaffProfile({
 
         <div className="px-5 pb-5">
           <div className="-mt-12 sm:-mt-14 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <ProfilePhoto name={fullName} />
+            <ProfilePhoto
+              firstName={user.first_name}
+              lastName={user.last_name}
+            />
             <div className="flex flex-wrap items-center gap-2">
               <StaffStatusBadge status={profile.status} />
               {profile.is_super_admin && (
@@ -228,7 +234,10 @@ export default function StaffProfile({
           </dl>
         </ProfileSection>
 
-        <ProfileSection title="At this school" description={profile.school.name}>
+        <ProfileSection
+          title="At this school"
+          description={profile.school.name}
+        >
           <dl className="divide-y divide-slate-50">
             <DetailRow label="Status">
               <StaffStatusBadge status={profile.status} />
@@ -246,7 +255,9 @@ export default function StaffProfile({
               {profile.active_login ? "Yes" : "No"}
             </DetailRow>
             <DetailRow label="Invitation">
-              {profile.invite_state ? INVITE_LABELS[profile.invite_state] : "Accepted"}
+              {profile.invite_state
+                ? INVITE_LABELS[profile.invite_state]
+                : "Accepted"}
             </DetailRow>
           </dl>
         </ProfileSection>

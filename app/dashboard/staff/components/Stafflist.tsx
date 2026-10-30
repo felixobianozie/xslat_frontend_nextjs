@@ -97,6 +97,7 @@ import {
   STAFF_STATUS_LABELS,
   STAFF_STATUS_ORDER,
 } from "../staffstatus";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -816,7 +817,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                   className="cursor-pointer flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors shadow-sm shadow-violet-200"
                 >
                   <ShieldCheck size={12} />
-                  <span>Permissions</span>
+                  <span>Roles &amp; Permissions</span>
                 </button>
               </div>
             </div>
@@ -894,7 +895,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                               <TriStateCheckbox
                                 checked={portfolio.id in selected}
                                 onChange={() => toggleSelected(portfolio)}
-                                ariaLabel={`Select ${user.first_name} ${user.last_name}`}
+                                ariaLabel={`Select ${personName(user)}`}
                               />
                             </td>
 
@@ -904,11 +905,7 @@ export default function StaffList({ initialData }: StaffListProps) {
                                 {/* Name with the invitation badge on the same line */}
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                   <span className="font-medium text-slate-800">
-                                    {user.first_name}{" "}
-                                    {user.middle_name
-                                      ? `${user.middle_name} `
-                                      : ""}
-                                    {user.last_name}
+                                    {personName(user)}
                                   </span>
                                   {portfolio.invite_state && (
                                     <InviteBadge
@@ -1021,13 +1018,13 @@ export default function StaffList({ initialData }: StaffListProps) {
                           <TriStateCheckbox
                             checked={portfolio.id in selected}
                             onChange={() => toggleSelected(portfolio)}
-                            ariaLabel={`Select ${user.first_name} ${user.last_name}`}
+                            ariaLabel={`Select ${personName(user)}`}
                           />
                           <div className="flex flex-col min-w-0 flex-1">
                             {/* Name with the invitation badge on the same line */}
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-sm font-semibold text-slate-800 truncate">
-                                {user.first_name} {user.last_name}
+                                {personName(user)}
                               </span>
                               {portfolio.invite_state && (
                                 <InviteBadge state={portfolio.invite_state} />

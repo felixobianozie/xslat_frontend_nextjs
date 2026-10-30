@@ -64,6 +64,7 @@ import {
   sameItems,
   type Mode,
 } from "../staffaccess";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -119,8 +120,7 @@ interface StaffRolesPanelProps {
 }
 
 function staffName(portfolio: StaffPortfolio): string {
-  const { first_name, last_name } = portfolio.staff_profile.user;
-  return `${first_name} ${last_name}`;
+  return personName(portfolio.staff_profile.user);
 }
 
 function plural(count: number, one: string, many: string): string {

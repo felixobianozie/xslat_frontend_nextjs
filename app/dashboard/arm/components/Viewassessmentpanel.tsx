@@ -41,6 +41,7 @@ import { useArmResultRoster } from "@/lib/Usearmresultroster";
 import { useArmSubjectScores } from "@/lib/Usearmsubjectscores";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import EmptyState from "../../components/Emptystate";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -243,8 +244,7 @@ export default function ViewAssessmentPanel({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-slate-800 truncate">
-                            {student.last_name} {student.first_name}{" "}
-                            {student?.middle_name ?? ""}
+                            {personName(student)} {student?.middle_name ?? ""}
                           </p>
                           {(student.public_id || student.gender) && (
                             <p className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
@@ -386,7 +386,7 @@ export default function ViewAssessmentPanel({
                           <td className="py-3 pr-4">
                             <div className="flex flex-col">
                               <span className="text-slate-800">
-                                {student.last_name} {student.first_name}{" "}
+                                {personName(student)}{" "}
                                 {student?.middle_name ?? ""}
                               </span>
                               {(student.public_id || student.gender) && (

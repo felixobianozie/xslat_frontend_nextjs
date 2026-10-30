@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import { Search, UserRound } from "lucide-react";
 import TableLoader from "../../components/Tableloader";
 import EmptyState from "../../components/Emptystate";
+import { matchesPersonSearch, personName } from "@/lib/Personname";
 
 interface ResultsMasterListProps {
   students: ArmStudent[];
@@ -30,7 +31,7 @@ interface ResultsMasterListProps {
 }
 
 function fullName(s: ArmStudent): string {
-  return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
+  return personName(s);
 }
 
 export default function ResultsMasterList({
@@ -41,16 +42,11 @@ export default function ResultsMasterList({
 }: ResultsMasterListProps) {
   const [search, setSearch] = useState("");
 
-  // Apply text filter against name and public id — same search behaviour as
-  // the Class Members tab so users get a consistent feel.
+  // Apply the text filter against name and public id, word by word and in any
+  // order, the same as the broadsheet and the server-side lists.
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter(
-      (s) =>
-        fullName(s).toLowerCase().includes(q) ||
-        (s.public_id ?? "").toLowerCase().includes(q),
-    );
+    if (!search.trim()) return students;
+    return students.filter((s) => matchesPersonSearch(s, search));
   }, [students, search]);
 
   return (

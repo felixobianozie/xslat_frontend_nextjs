@@ -59,6 +59,7 @@ import ClassMemberActionMenu from "./Classmemberactionmenu";
 import ClassMemberRemoveFromArmDialog from "./Classmemberremovefromarmdialog";
 import AddClassMemberPanel from "./Addclassmemberpanel";
 import EditStudentSubjectsPanel from "./Editstudentsubjectspanel";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -270,7 +271,7 @@ interface PaginatedResponse<T> {
 
 // Build a display-friendly full name from the nested user fields.
 function fullName(s: ArmStudent): string {
-  return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
+  return personName(s);
 }
 
 // Build the GET student/list/ URL from the tab's current state. Only params

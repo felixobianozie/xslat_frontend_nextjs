@@ -36,9 +36,15 @@ import { useBroadsheetDetails } from "../context/BroadsheetDetailsProvider";
 import { sortStudents, type BroadsheetSort } from "../broadsheetsort";
 import BroadsheetRowActionMenu from "./BroadsheetRowActionMenu";
 import StudentInfoModal, { StudentInfoVariant } from "./StudentInfoModal";
+import { matchesPersonSearch, personName } from "@/lib/Personname";
 
 // Tracks which row's modal is open. Stored at this level (rather than in
 // each row) so only one modal is ever mounted at a time.
+// Decision is the last column, so on a desktop the vertical scroll bar of the
+// table sits over its right edge. The extra right padding widens the column a
+// little, so its text stays clear of the bar.
+const DECISION_COLUMN_CLASSES = "lg:pr-6";
+
 interface ActiveModalState {
   variant: StudentInfoVariant;
   student: ArmStudent;
@@ -83,17 +89,8 @@ export default function BroadsheetCognitiveView({
   // Filter students by the parent's search box. We match on name and the
   // public_id so admins can look up either way.
   const visibleStudents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter((s) => {
-      const fullName = `${s.first_name} ${s.middle_name ?? ""} ${s.last_name}`
-        .toLowerCase()
-        .replace(/\s+/g, " ");
-      return (
-        fullName.includes(q) ||
-        (s.public_id?.toLowerCase().includes(q) ?? false)
-      );
-    });
+    if (!searchQuery.trim()) return students;
+    return students.filter((s) => matchesPersonSearch(s, searchQuery));
   }, [students, searchQuery]);
 
   // Overall total of each student, for sorting: the academic total.
@@ -214,7 +211,9 @@ export default function BroadsheetCognitiveView({
               <SummaryHeader>Average</SummaryHeader>
               <SummaryHeader>Position</SummaryHeader>
               <SummaryHeader>Grades Summary</SummaryHeader>
-              <SummaryHeader>Decision</SummaryHeader>
+              <SummaryHeader extraClassName={DECISION_COLUMN_CLASSES}>
+                Decision
+              </SummaryHeader>
             </tr>
 
             {/* Second header row — unit labels under each subject. */}
@@ -288,9 +287,7 @@ export default function BroadsheetCognitiveView({
                     {rowIndex + 1}
                   </td>
                   <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44">
-                    {student.first_name}{" "}
-                    {student.middle_name ? `${student.middle_name} ` : ""}
-                    {student.last_name}
+                    {personName(student)}
                   </td>
                   <td className="px-2 py-2 text-slate-500 whitespace-nowrap">
                     {student.public_id ?? "—"}
@@ -357,7 +354,7 @@ export default function BroadsheetCognitiveView({
                       .map(([sym, n]) => `${sym}:${n}`)
                       .join(", ") || "—"}
                   </SummaryCell>
-                  <SummaryCell>
+                  <SummaryCell extraClassName={DECISION_COLUMN_CLASSES}>
                     <span
                       className={
                         studentResult?.decision === "Pass"
@@ -428,10 +425,16 @@ function ColumnHeader({
 
 // Summary column header — horizontal text with the same border treatment
 // as the summary body cells beneath it.
-function SummaryHeader({ children }: { children: React.ReactNode }) {
+function SummaryHeader({
+  children,
+  extraClassName = "",
+}: {
+  children: React.ReactNode;
+  extraClassName?: string;
+}) {
   return (
     <th
-      className="px-2 py-2 border-l border-l-indigo-300 whitespace-nowrap"
+      className={`px-2 py-2 border-l border-l-indigo-300 whitespace-nowrap ${extraClassName}`}
       rowSpan={2}
     >
       {children}
@@ -439,9 +442,17 @@ function SummaryHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SummaryCell({ children }: { children: React.ReactNode }) {
+function SummaryCell({
+  children,
+  extraClassName = "",
+}: {
+  children: React.ReactNode;
+  extraClassName?: string;
+}) {
   return (
-    <td className="px-2 py-2 border-l border-l-indigo-100 text-slate-700">
+    <td
+      className={`px-2 py-2 border-l border-l-indigo-100 text-slate-700 ${extraClassName}`}
+    >
       {children}
     </td>
   );

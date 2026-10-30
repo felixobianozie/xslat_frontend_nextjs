@@ -21,6 +21,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
 import ButtonLoader from "../../components/Buttonloader";
+import { personName } from "@/lib/Personname";
 
 interface ClassMemberRemoveFromArmDialogProps {
   open: boolean;
@@ -65,9 +66,7 @@ export default function ClassMemberRemoveFromArmDialog({
   if (!open) return null;
 
   const armLabel = formatArm(arm);
-  const studentName = student
-    ? `${student.last_name} ${student.first_name} ${student.middle_name}`
-    : "this student";
+  const studentName = student ? personName(student) : "this student";
 
   return (
     <div

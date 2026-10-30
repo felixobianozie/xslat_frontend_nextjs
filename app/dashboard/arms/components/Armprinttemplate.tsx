@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { forwardRef } from "react";
+import { personName } from "@/lib/Personname";
 
 interface ArmPrintTemplateProps {
   arms: ClassArm[];
@@ -21,8 +22,7 @@ function formatArm(arm: ClassArm): string {
 // Formats a teacher's full name, or a dash when the role is unfilled.
 function teacherName(teacher: ArmTeacher | null | undefined): string {
   if (!teacher) return "—";
-  const u = teacher.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(teacher.staff_profile.user);
 }
 
 const ArmPrintTemplate = forwardRef<HTMLDivElement, ArmPrintTemplateProps>(

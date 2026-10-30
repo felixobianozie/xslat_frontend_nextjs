@@ -10,6 +10,7 @@
 import { forwardRef } from "react";
 
 import { getStudentStatusLabel } from "./Studentstatuspill";
+import { personName } from "@/lib/Personname";
 
 const GENDER_LABELS: Record<string, string> = {
   M: "Male",
@@ -63,9 +64,7 @@ const StudentPrintTemplate = forwardRef<
                 }`}
               >
                 <td className="px-3">{index + 1}</td>
-                <td className="px-3">
-                  {student.first_name} {student.last_name}
-                </td>
+                <td className="px-3">{personName(student)}</td>
                 <td className="px-3 font-mono">{student.public_id}</td>
                 <td className="px-3">{GENDER_LABELS[student.gender] ?? "—"}</td>
                 <td className="px-3">{formatArm(student.current_arm)}</td>

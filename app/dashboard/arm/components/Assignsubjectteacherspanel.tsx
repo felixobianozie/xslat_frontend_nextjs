@@ -39,6 +39,7 @@ import ButtonLoader from "../../components/Buttonloader";
 import { PublicationNotice } from "../../configurations/components/Configui";
 import { isArmLocked } from "../../configurations/configutils";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ interface AssignSubjectTeachersPanelProps {
 // Pull a teacher's display name from the nested StaffPortfolio.
 function teacherName(t: ArmTeacher): string {
   const u = t.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(u);
 }
 
 export default function AssignSubjectTeachersPanel({

@@ -23,6 +23,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type { PaginatedResponse } from "../page";
 import ButtonLoader from "../../components/Buttonloader";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -206,9 +207,7 @@ export default function StudentAssignArmPanel({
               <div className="text-sm text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
                 {student ? (
                   <>
-                    {student.first_name}{" "}
-                    {student.middle_name ? `${student.middle_name} ` : ""}
-                    {student.last_name}{" "}
+                    {personName(student)}{" "}
                     <span className="text-[10px] text-slate-400 ml-1">
                       ({student.public_id})
                     </span>

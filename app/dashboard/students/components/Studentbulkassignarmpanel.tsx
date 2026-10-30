@@ -40,6 +40,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type { PaginatedResponse } from "../page";
 import ButtonLoader from "../../components/Buttonloader";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -281,9 +282,7 @@ export default function StudentBulkAssignArmPanel({
                         key={s.id}
                         className="inline-flex items-center gap-1 bg-violet-100 text-violet-700 rounded-full pl-2.5 pr-1 py-0.5 text-[11px]"
                       >
-                        <span className="font-medium">
-                          {s.first_name} {s.last_name}
-                        </span>
+                        <span className="font-medium">{personName(s)}</span>
                         <span className="text-violet-400 text-[9px]">
                           {s.public_id}
                         </span>
@@ -291,7 +290,7 @@ export default function StudentBulkAssignArmPanel({
                           type="button"
                           onClick={() => removeSelected(s.id)}
                           className="cursor-pointer hover:bg-violet-200 rounded-full p-0.5 transition-colors"
-                          aria-label={`Remove ${s.first_name} ${s.last_name}`}
+                          aria-label={`Remove ${personName(s)}`}
                         >
                           <X size={11} />
                         </button>

@@ -48,7 +48,6 @@ import {
   DetailRow,
   ProfileSection,
   VerifiedBadge,
-  displayName,
   formatProfileDate,
   joinAddress,
 } from "../../components/Profilecard";
@@ -57,6 +56,7 @@ import VerifyEmailPanel from "../../components/Verifyemailpanel";
 import VerifyPhonePanel from "../../components/Verifyphonepanel";
 import StaffStatusBadge from "../../staff/components/Staffstatusbadge";
 import { EMPLOYMENT_CHOICES } from "../../staff/staffstatus";
+import { personName } from "@/lib/Personname";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
@@ -222,11 +222,7 @@ export default function UserProfile({
     );
   }
 
-  const fullName = displayName(
-    user.first_name,
-    user.middle_name,
-    user.last_name,
-  );
+  const fullName = personName(user);
   const changes = form ? changesBetween(user, form) : {};
   const hasChanges = Object.keys(changes).length > 0;
 
@@ -286,7 +282,10 @@ export default function UserProfile({
           <div className="h-20 sm:h-24 bg-linear-to-r from-violet-500 to-indigo-500" />
           <div className="px-5 pb-5">
             <div className="-mt-12 sm:-mt-14">
-              <ProfilePhoto name={fullName} />
+              <ProfilePhoto
+                firstName={user.first_name}
+                lastName={user.last_name}
+              />
             </div>
             <h2 className="mt-3 text-lg font-bold text-slate-800 wrap-break-word">
               {fullName}

@@ -21,6 +21,7 @@
 
 import { ChevronLeft, User } from "lucide-react";
 import type { ReviewAction } from "./Profilerequests";
+import { personName } from "@/lib/Personname";
 
 // Human-readable gender labels — mirrors CustomUser GENDER choices on the backend
 const GENDER_LABELS: Record<string, string> = {
@@ -126,7 +127,7 @@ export default function ProfileReviewPanel({
             </div>
             <div className="text-center md:text-left">
               <p className="text-lg font-bold text-slate-800">
-                {request?.user.first_name} {request?.user.last_name}
+                {request?.user ? personName(request.user) : ""}
               </p>
 
               <p className="text-xs text-slate-500 mt-0.5 font-medium">

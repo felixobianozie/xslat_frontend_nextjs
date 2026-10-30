@@ -55,6 +55,7 @@ import ArmCreatePanel from "./Armcreatepanel";
 import ArmAssignTeachersPanel from "./Armassignteacherspanel";
 import ArmPrintTemplate from "./Armprinttemplate";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -80,8 +81,7 @@ function formatArm(arm: ClassArm): string {
 // empty string when no teacher is assigned so callers can decide the fallback.
 function teacherName(teacher: ArmTeacher | null | undefined): string {
   if (!teacher) return "";
-  const u = teacher.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(teacher.staff_profile.user);
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -569,9 +569,7 @@ function TeacherCell({ teacher }: { teacher: ArmTeacher | null | undefined }) {
         <UserRound size={11} />
       </span>
       <div className="flex flex-col min-w-0">
-        <span className="text-slate-700 truncate">
-          {u.first_name} {u.last_name}
-        </span>
+        <span className="text-slate-700 truncate">{personName(u)}</span>
         {u.public_id && (
           <span className="text-[10px] text-slate-400 truncate">
             {u.public_id}
@@ -599,8 +597,7 @@ function MobileTeacherRow({
       </span>
       {teacher ? (
         <span className="text-slate-700 text-xs truncate">
-          {teacher.staff_profile.user.first_name}{" "}
-          {teacher.staff_profile.user.last_name}
+          {personName(teacher.staff_profile.user)}
         </span>
       ) : (
         <span className="text-slate-300 text-xs">Not assigned</span>

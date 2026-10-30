@@ -31,6 +31,7 @@ import {
   sortStudents,
   type BroadsheetSort,
 } from "../broadsheetsort";
+import { personName } from "@/lib/Personname";
 
 // How many subjects to show per printed page. Tweak alongside the
 // per-cell padding if you ever change the unit count.
@@ -238,7 +239,7 @@ const PrintableBroadsheet = forwardRef<
                         {rowIndex + 1}
                       </td>
                       <td className="border border-slate-300 px-2 py-1 whitespace-nowrap">
-                        {student.first_name} {student.last_name}
+                        {personName(student)}
                       </td>
                       {pageIndex === 0 && (
                         <>

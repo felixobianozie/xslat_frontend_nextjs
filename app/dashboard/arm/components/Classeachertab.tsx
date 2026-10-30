@@ -28,6 +28,7 @@ import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
 import type { ApiEnvelope } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ const MALE_AVATAR = "/images/male_avatar.webp";
 function teacherDisplayName(t: ArmTeacher | null | undefined): string {
   if (!t) return "—";
   const u = t.staff_profile.user;
-  return `${u.first_name} ${u.last_name}`;
+  return personName(u);
 }
 
 // Subjects this teacher teaches WITHIN this arm — pulled from the nested

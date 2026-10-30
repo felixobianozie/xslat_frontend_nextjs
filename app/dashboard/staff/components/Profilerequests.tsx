@@ -50,6 +50,7 @@ import { toast } from "react-toastify";
 import TableLoader from "../../components/Tableloader";
 import Paginator, { PAGE_SIZE } from "../../components/Paginator";
 import type { PaginatedResponse } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -311,7 +312,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   function fullName(req: StaffProfReq) {
-    return `${req.user.first_name} ${req.user.last_name}`;
+    return personName(req.user);
   }
 
   // Opens the confirmation modal for an action on a request
@@ -492,7 +493,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                               openReview(req);
                             }}
                           >
-                            {req.user.first_name} {req.user.last_name}
+                            {personName(req.user)}
                           </span>
                         </div>
                       </td>
@@ -542,7 +543,7 @@ export default function ProfileRequests({ initialData }: ProfileRequestsProps) {
                             openReview(req);
                           }}
                         >
-                          {req.user.first_name} {req.user.last_name}
+                          {personName(req.user)}
                         </span>
                         <span className="text-[10px] text-slate-400">
                           {req.created_on.slice(0, 10)}

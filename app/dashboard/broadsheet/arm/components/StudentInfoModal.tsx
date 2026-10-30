@@ -28,6 +28,7 @@ import { Award, BarChart3, Lock, MessageSquare, X } from "lucide-react";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../../components/Buttonloader";
 import type { ApiEnvelope } from "../context/BroadsheetDetailsProvider";
+import { personName } from "@/lib/Personname";
 
 // ── Variant union ─────────────────────────────────────────────────────────
 export type StudentInfoVariant = "performance" | "access";
@@ -59,9 +60,10 @@ interface StudentInfoModalProps {
   onClose: () => void;
 }
 
-// Full name helper — handles the optional middle_name without dangling spaces.
+// Full name helper — last name, first name, then middle name, the same as the
+// tables, with an empty middle name left out.
 function fullName(s: ArmStudent): string {
-  return [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(" ");
+  return personName(s);
 }
 
 // Format an ISO datetime for display. Returns "—" for null / invalid input.

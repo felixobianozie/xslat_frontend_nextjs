@@ -4,7 +4,7 @@
 // Profilephoto.tsx
 //
 // The photo spot at the top of a profile: a soft round placeholder with the
-// person's initials (a person icon when there is no name yet) and a small
+// person's initials (first name, then last name) (a person icon when there is no name yet) and a small
 // camera button on its corner.
 //
 // Photos are not built yet, so the camera button only shows the standard
@@ -18,16 +18,22 @@ import { toast } from "react-toastify";
 
 const FEATURE_IN_WORKS = "This feature is currently in the works.";
 
-function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "";
-  const first = words[0][0];
-  const last = words.length > 1 ? words[words.length - 1][0] : "";
-  return (first + last).toUpperCase();
+// The first name's and the last name's first letters, in that order, however
+// the full name is written.
+function initialsOf(firstName: string, lastName: string): string {
+  return (
+    (firstName.trim()[0] ?? "") + (lastName.trim()[0] ?? "")
+  ).toUpperCase();
 }
 
-export default function ProfilePhoto({ name }: { name: string }) {
-  const initials = initialsOf(name);
+export default function ProfilePhoto({
+  firstName,
+  lastName,
+}: {
+  firstName: string;
+  lastName: string;
+}) {
+  const initials = initialsOf(firstName, lastName);
 
   return (
     <div className="relative h-24 w-24 shrink-0 sm:h-28 sm:w-28">

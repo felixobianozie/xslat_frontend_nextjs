@@ -79,6 +79,7 @@ import FilterPanel, {
 } from "../../components/Filterpanel";
 import ResultCount from "../../components/Resultcount";
 import type { PaginatedResponse } from "../page";
+import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -911,7 +912,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleStudent(student)}
-                                aria-label={`Select ${student.last_name} ${student.first_name}`}
+                                aria-label={`Select ${personName(student)}`}
                                 className="accent-violet-600 cursor-pointer"
                               />
                             </td>
@@ -920,10 +921,7 @@ export default function StudentList({ initialData }: StudentListProps) {
                             <td className="px-5">
                               <div className="flex flex-col">
                                 <span className="font-medium text-slate-800">
-                                  {student.last_name} {student.first_name}{" "}
-                                  {student.middle_name
-                                    ? `${student.middle_name} `
-                                    : ""}
+                                  {personName(student)}
                                 </span>
                                 <span className="text-[10px] text-slate-400">
                                   {student.public_id}
@@ -1017,15 +1015,12 @@ export default function StudentList({ initialData }: StudentListProps) {
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => toggleStudent(student)}
-                              aria-label={`Select ${student.first_name} ${student.last_name}`}
+                              aria-label={`Select ${personName(student)}`}
                               className="accent-violet-600 cursor-pointer shrink-0"
                             />
                             <div className="flex flex-col min-w-0">
                               <span className="text-sm font-semibold text-slate-800 truncate">
-                                {student.last_name} {student.first_name}{" "}
-                                {student.middle_name
-                                  ? `${student.middle_name} `
-                                  : ""}
+                                {personName(student)}
                               </span>
                               <span className="text-[10px] text-slate-400">
                                 {student.public_id}

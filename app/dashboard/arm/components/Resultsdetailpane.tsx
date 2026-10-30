@@ -23,6 +23,7 @@ import ResultsAcademicsView from "./Resultsacademicsview";
 import ResultsTraitsGridView from "./Resultstraitsgridview";
 import ResultsGeneralView from "./Resultsgeneralview";
 import { ResultsFilterKey } from "./Resultsfilter";
+import { personName } from "@/lib/Personname";
 
 interface ResultsDetailPaneProps {
   student: ArmStudent;
@@ -44,7 +45,7 @@ interface ResultsDetailPaneProps {
 }
 
 function fullName(s: ArmStudent): string {
-  return `${s.last_name} ${s.first_name} ${s.middle_name ? ` ${s.middle_name}` : ""}`;
+  return personName(s);
 }
 
 export default function ResultsDetailPane({

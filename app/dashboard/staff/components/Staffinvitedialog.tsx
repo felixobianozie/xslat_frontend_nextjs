@@ -24,6 +24,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import ButtonLoader from "../../components/Buttonloader";
+import { personName } from "@/lib/Personname";
 
 const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
@@ -45,7 +46,7 @@ export default function StaffInviteDialog({
   const { clientAuthFetch } = useClientAuthFetch();
 
   const user = portfolio.staff_profile.user;
-  const name = `${user.first_name} ${user.last_name}`;
+  const name = personName(user);
 
   const [email, setEmail] = useState("");
   // A problem with the new address, from this form or from the backend
@@ -58,10 +59,10 @@ export default function StaffInviteDialog({
     mutationFn: async () => {
       const { data, error } =
         kind === "revoke"
-          ? await clientAuthFetch<{ message: string }>(
-              "staff/invite/revoke/",
-              { method: "POST", body: { portfolio_id: portfolio.id } },
-            )
+          ? await clientAuthFetch<{ message: string }>("staff/invite/revoke/", {
+              method: "POST",
+              body: { portfolio_id: portfolio.id },
+            })
           : await clientAuthFetch<{
               message: string;
               data: { invite_sent: boolean };
