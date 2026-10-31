@@ -151,7 +151,7 @@ function JuniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
         <header className="flex items-center justify-between gap-4 border-b border-slate-300 pb-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <LogoWithFallback accent="indigo" abbr={school.abbr} />
-            <div className="flex min-h-[45mm] min-w-0 flex-col justify-center gap-1">
+            <div className="flex min-h-[35mm] min-w-0 flex-col justify-center gap-1">
               <h1 className="text-[20px] font-bold uppercase leading-tight tracking-wide text-slate-900">
                 {school.name}
               </h1>

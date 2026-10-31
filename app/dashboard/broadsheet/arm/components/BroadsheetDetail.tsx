@@ -35,6 +35,7 @@ import BroadsheetCognitiveView from "./BroadsheetCognitiveView";
 import BroadsheetAffectiveView from "./BroadsheetAffectiveView";
 import BroadsheetPsychomotorView from "./BroadsheetPsychomotorView";
 import BroadsheetGradingReference from "./BroadsheetGradingReference";
+import BroadsheetTeachers from "./BroadsheetTeachers";
 import PrintableBroadsheet from "./PrintableBroadsheet";
 
 export default function BroadsheetDetail() {
@@ -212,6 +213,10 @@ export default function BroadsheetDetail() {
 
       {/* ── Grading reference ───────────────────────────────────────── */}
       <BroadsheetGradingReference />
+
+      {/* ── Teachers ────────────────────────────────────
+          The class teacher and assistant, then each subject's teachers. */}
+      <BroadsheetTeachers />
 
       {/* ── Hidden print template ───────────────────────────────────── */}
       {/* Kept in the DOM (not display:none) so refs and layout work, but

@@ -70,6 +70,7 @@ export interface BroadsheetDetailsContextValue {
   // for a fraction of a second before real data arrives.
   studentsPending: boolean;
   subjectsPending: boolean;
+  subjectsIsError: boolean;
   classResultPending: boolean;
 }
 
@@ -119,9 +120,11 @@ export function BroadsheetDetailsProvider({
   } = useArmResultRoster(armId);
 
   // ── Query 3: subjects offered by the arm ────────────────────────────────
-  const { data: subjectsData, isPending: subjectsPending } = useQuery<
-    ApiEnvelope<ArmSubject[]>
-  >({
+  const {
+    data: subjectsData,
+    isPending: subjectsPending,
+    isError: subjectsIsError,
+  } = useQuery<ApiEnvelope<ArmSubject[]>>({
     queryKey: ["broadsheet-subjects", armId],
     queryFn: async () => {
       const url =
@@ -216,6 +219,7 @@ export function BroadsheetDetailsProvider({
     error: armError,
     studentsPending,
     subjectsPending,
+    subjectsIsError,
     classResultPending,
   };
 

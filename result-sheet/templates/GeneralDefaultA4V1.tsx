@@ -168,7 +168,7 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
         <header className="flex items-center justify-between gap-4 border-b border-slate-300 pb-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <LogoWithFallback accent={accent} abbr={school.abbr} />
-            <div className="flex min-h-[45mm] min-w-0 flex-col justify-center gap-1">
+            <div className="flex min-h-[35mm] min-w-0 flex-col justify-center gap-1">
               <h1 className="text-[20px] font-bold uppercase leading-tight tracking-wide text-slate-900">
                 {school.name}
               </h1>
@@ -244,7 +244,9 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
             />
           </div>
 
-          <div className={`mt-1 grid grid-cols-4 gap-0 overflow-hidden rounded-md border ${a.border200}`}>
+          <div
+            className={`mt-1 grid grid-cols-4 gap-0 overflow-hidden rounded-md border ${a.border200}`}
+          >
             <SummaryCell
               accent={accent}
               className={`border-r ${a.border200}`}
@@ -282,8 +284,12 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
             the school can ask for a footer row instead with grade_summary: "footer". */}
         {gradeSummary === "band" && (
           <section className="mt-1">
-            <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border ${a.border200} ${a.bg50} px-3 py-1`}>
-              <span className={`text-[7.5px] font-semibold uppercase tracking-widest ${a.text900Soft}`}>
+            <div
+              className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border ${a.border200} ${a.bg50} px-3 py-1`}
+            >
+              <span
+                className={`text-[7.5px] font-semibold uppercase tracking-widest ${a.text900Soft}`}
+              >
                 Grade Summary
               </span>
               {gradeSummaryEntries
@@ -373,7 +379,9 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
                     </th>
                   ))
                 ) : (
-                  <th className={`whitespace-nowrap border ${a.border500} px-1 py-1 text-[8px] font-normal`}>
+                  <th
+                    className={`whitespace-nowrap border ${a.border500} px-1 py-1 text-[8px] font-normal`}
+                  >
                     Score
                   </th>
                 )}
@@ -454,7 +462,9 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
                   carries a value; everything else is blank. */}
               <tr className={`${a.bg900} text-white`}>
                 <td className={`border ${a.border900} px-1 py-1`} />
-                <td className={`border ${a.border900} px-1.5 py-1 text-[8.5px] uppercase tracking-widest`}>
+                <td
+                  className={`border ${a.border900} px-1.5 py-1 text-[8.5px] uppercase tracking-widest`}
+                >
                   Total
                 </td>
                 {units.length > 0 ? (
@@ -469,7 +479,9 @@ function GeneralDefaultA4V1({ result, config, printRef }: ResultTemplateProps) {
                 ) : (
                   <td className={`border ${a.border900} px-1 py-1`} />
                 )}
-                <td className={`border ${a.border900} px-1 py-1 text-center font-bold`}>
+                <td
+                  className={`border ${a.border900} px-1 py-1 text-center font-bold`}
+                >
                   {total_score}
                 </td>
                 <td className={`border ${a.border900} px-1 py-1`} />

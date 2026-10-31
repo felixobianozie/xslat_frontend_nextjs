@@ -79,7 +79,9 @@ export function isKnownTemplateKey(key: string | null | undefined): boolean {
 export function resolveTemplate(
   key: string | null | undefined,
 ): ElementType<ResultTemplateProps> {
-  return isKnownTemplateKey(key) ? TEMPLATES[key as string].component : GeneralDefaultA4V1;
+  return isKnownTemplateKey(key)
+    ? TEMPLATES[key as string].component
+    : GeneralDefaultA4V1;
 }
 
 // The templates this build can draw, for a screen that lets someone choose one.
