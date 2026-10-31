@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// lib/downloadResultPdf.ts
+// result-sheet/download/downloadResultPdf.ts
 //
 // Convert a rendered result template (any DOM node) into a downloadable
 // A4-portrait PDF. The output is an image PDF — a single high-DPI raster
@@ -18,7 +18,7 @@
 //   Stock html2canvas silently produces incorrect colours or throws on
 //   OKLCH. `-pro` is a drop-in replacement and stays maintained.
 //
-// Dependencies (new to the project):
+// Dependencies:
 //   - html2canvas-pro
 //   - jspdf
 // ─────────────────────────────────────────────────────────────────────────────

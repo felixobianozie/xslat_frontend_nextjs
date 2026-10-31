@@ -1,37 +1,36 @@
 "use client";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ResultsPreview.tsx
+// ──────────────────────────────────────────
+// ResultSheetViewer.tsx
 //
-// Renders the resolved result template for a successful check-result
-// response, and exposes the two output flows:
+// A result sheet with the two ways of taking it away:
 //
-//   1. Print (browser dialog) — window.print() honours the templates'
-//      inline @page { size: A4 portrait; margin: 0; } rule so the
-//      browser's Save-as-PDF produces vector output.
-//   2. Download PDF (image) — html2canvas-pro rasterises the same DOM
-//      node and jsPDF wraps it into an A4 file. Same visual, different
-//      internal representation.
+//   1. Print (browser dialog): window.print() honours the templates' inline
+//      @page { size: A4 portrait; margin: 0; } rule, so the browser's
+//      Save-as-PDF produces vector output.
+//   2. Download PDF (image): html2canvas-pro rasterises the same DOM node and
+//      jsPDF wraps it into an A4 file. Same visual, different representation.
 //
-// The template node lives behind `printRef` so html2canvas has an exact
-// handle on the printable page. Attaching the ref to the outer wrapper
-// (rather than a child of the template) means everything the template
-// renders — including its inline <style> — is inside the captured node.
+// The sheet node sits behind `printRef`, so html2canvas has an exact handle on
+// the printable page and everything the template renders, including its inline
+// <style>, is inside the captured node.
 //
-// Mobile-first note:
-//   The template itself is a fixed-width 210mm sheet (as required for
-//   print fidelity). On phones we don't try to reflow it; we wrap it in
-//   a horizontally-scrollable container so it remains readable and the
-//   PDF output stays predictable. The Print / Download buttons sit
-//   above the scroll area so they're always reachable.
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { useRef, useState } from "react";
+// The sheet is a fixed 210mm page (as print fidelity requires). On a phone it is
+// not reflowed: it sits in a horizontally scrolling container, and the Print and
+// Download buttons stay above the scroll area.
+//
+// Props beyond the result are optional, so any screen can use the viewer:
+//   onReset         shows a "Check another" button that calls it.
+//   notice          a line of guidance under the "Preview" title.
+//   stickyTopClass  where the header strip sticks while scrolling (default
+//                   "top-16", which clears the public site's navbar).
+// ──────────────────────────────────────────
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "react-toastify";
 
-import { resolveTemplate } from "./registry";
-import { downloadResultPdf } from "./downloadResultPdf";
-import type { StudentResultResponse } from "./results";
+import ResultSheet from "./ResultSheet";
+import { downloadResultPdf } from "./download/downloadResultPdf";
+import type { StudentResultResponse } from "./types";
 
 // Print-orchestration CSS. Injected as an inline <style> block so it's only
 // active while the preview is mounted, and so it lives alongside the
@@ -80,27 +79,25 @@ const PRINT_ORCHESTRATION_STYLES = `
   }
 `;
 
-interface ResultsPreviewProps {
+interface ResultSheetViewerProps {
   result: StudentResultResponse;
-  /**
-   * Optional. When provided, the preview header shows a "Check another
-   * result" button that calls this callback. The parent typically wires
-   * it to `mutation.reset()` so the form comes back and the user can
-   * look up a different student without navigating away from the page.
-   */
+  // When given, the header shows a "Check another" button that calls this. The
+  // check page wires it to `mutation.reset()`, so the form comes back and a
+  // different student can be looked up without leaving the page.
   onReset?: () => void;
+  // A line of guidance shown under the "Preview" title.
+  notice?: ReactNode;
+  // The Tailwind class that sets where the header strip sticks. `top-16` parks
+  // it just below the public site's navbar.
+  stickyTopClass?: string;
 }
 
-export default function ResultsPreview({
+export default function ResultSheetViewer({
   result,
   onReset,
-}: ResultsPreviewProps) {
-  // Pick the component from the registry using the arm's template_key.
-  // resolveTemplate() always returns a valid component, so no null-check
-  // is needed further down.
-  const Template = resolveTemplate(result.arm.result_template?.template_key);
-  const templateConfig = result.arm.result_template?.config ?? {};
-
+  notice,
+  stickyTopClass = "top-16",
+}: ResultSheetViewerProps) {
   // The rendered A4 page's DOM node — captured for PDF rasterisation.
   const printRef = useRef<HTMLDivElement | null>(null);
 
@@ -169,17 +166,15 @@ export default function ResultsPreview({
           z-10, so if the announcement banner is showing the Navbar still
           wins visually — dismissing the banner brings this strip flush to
           the Navbar's bottom edge. */}
-      <div className="sticky top-16 z-10 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-2 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <div
+        className={`sticky ${stickyTopClass} z-10 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-2 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between print:hidden`}
+      >
         {/* Left cluster — just the "Preview" title + description now. */}
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500 py-2">
             Preview
           </p>
-          <p className="text-sm text-slate-700">
-            <span className="text-slate-900">NB: </span> If you leave this page
-            without printing or downloading, viewing it again will consume
-            another PIN usage count.
-          </p>
+          {notice && <p className="text-sm text-slate-700">{notice}</p>}
         </div>
 
         {/* Right cluster — Print, Download, and Check another (when
@@ -234,7 +229,7 @@ export default function ResultsPreview({
           exactly the right size for print fidelity while still being
           usable on a small screen. */}
       <div className="mt-3 w-full overflow-x-auto bg-slate-100 py-4 print:mt-0 print:overflow-visible print:bg-white print:py-0">
-        <Template result={result} config={templateConfig} printRef={printRef} />
+        <ResultSheet result={result} printRef={printRef} />
       </div>
     </section>
   );

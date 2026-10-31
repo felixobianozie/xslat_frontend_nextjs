@@ -1,87 +1,63 @@
 "use client";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SeniorDefaultA4V1.tsx
+// ──────────────────────────────────────────
+// templates/SeniorDefaultA4V1.tsx
 //
-// Registered against the backend template_key `senior-default-a4v1` (DB
-// name: "SENIOR DEFAULT A4V1"). Assigned to arms whose result_template
-// FK points at that row on the backend's ResultTemplate table.
+// Registered against the backend template_key `senior-default-a4v1`. Assigned to arms whose
+// result_template points at that row on the backend's ResultTemplate table.
 //
-// Design language — violet accent, A4 portrait, no position field, grade
-// summary as its own top band. Ported from
+// Design language: violet accent, A4 portrait, no position field, and the grade
+// summary as its own band above the cognitive table. Ported from
 // terminal-report-template-2_senior-secondary.html.
 //
-// Shares its data contract with JuniorDefaultA4V1 but differs in three
-// visual specifics that justify keeping the two as separate files:
-//   - Violet accent in place of indigo. Chosen so it prints as a distinct
-//     grey shade in black-and-white without clashing with rose (fails) or
-//     emerald (PASS decision) colours.
-//   - "Position" field removed from the identity grid (senior secondary
-//     reports do not publish class positions individually). Date Issued
-//     widened to col-span-2 to close the resulting gap.
-//   - Grade Summary lifted OUT of the cognitive table footer and placed as
-//     its own full-width band directly under the summary strip.
+// It differs from JuniorDefaultA4V1 in three ways: the violet accent (it prints
+// as a distinct grey in black and white without clashing with the rose of a
+// failing grade or the emerald of a PASS decision), no Position field (senior
+// secondary reports do not publish individual class positions, and Date Issued
+// spans the freed column), and the Grade Summary band.
 //
-// Everything else — cognitive table structure, behaviour/skills tiles,
-// remark cards, legend row, print-orchestration hooks — is visually and
-// logically identical to the junior template.
-// ─────────────────────────────────────────────────────────────────────────────
+// Data mapping (from the StudentResultResponse the sheet is given):
+//   Header / identity ← result.school, result.arm/level/section, result.term,
+//                       result.session, and the student name fields.
+//   Summary strip     ← result.average, class_average, total_score, decision.
+//   Cognitive table   ← result.subjects (rows), result.arm.cognitive_assessment_format.units
+//                       (unit column headers), result.grading_summary.
+//   Teacher ID col.   ← result.subjects[*].teachers[0].public_id (hydrated from
+//                       the result context's subjects).
+//   Behaviour grid    ← result.behaviours.
+//   Skills grid       ← result.skills.
+//   Remarks           ← result.teachers_remark, result.supervisors_remark.
+//   Grading legends   ← result.arm.cog_grading_format / aff_grading_format /
+//                       psy_grading_format (their `.grades` arrays).
+//   Date issued       ← result.term.results_published_at, printed as the WAT date
+//                       (see formatIssueDate); today's date when it is missing.
+//
+// Assumptions the runtime data may not satisfy:
+//   - School logo: served from /images/lhs_logo.png; a circle showing the school
+//     abbreviation renders when the image is absent or fails to load.
+//   - Student photo: no field exists on the Student model yet, so the dashed
+//     square renders as a permanent placeholder.
+// ──────────────────────────────────────────
 
-import { useState } from "react";
-import Image from "next/image";
+import type { ResultTemplateProps } from "../types";
+import IdentityCell from "../components/IdentityCell";
+import LegendCard from "../components/LegendCard";
+import LogoWithFallback from "../components/LogoWithFallback";
+import PhotoPlaceholder from "../components/PhotoPlaceholder";
+import RemarkCard from "../components/RemarkCard";
+import SummaryCell from "../components/SummaryCell";
+import TraitGrid from "../components/TraitGrid";
+import {
+  composeSchoolAddress,
+  composeStudentName,
+  formatIssueDate,
+  formatScore,
+} from "../utils/formatting";
+import { PRINT_STYLES } from "../utils/printStyles";
 
-import type { ResultTemplateProps } from "./types";
-import type { ResultGrade } from "./results";
-
-// A4 print-size and print-media reset — the two things Tailwind can't
-// reasonably express. Same content as the junior template; scoped here so
-// this file remains self-contained.
-const PRINT_STYLES = `
-  @page { size: A4 portrait; margin: 0; }
-  @media print {
-    html, body { background: white; }
-    .result-page { box-shadow: none !important; margin: 0 !important; }
-  }
-`;
-
-// ── Small helpers duplicated so each template file is self-contained ────────
-
-function composeStudentName(
-  first: string,
-  middle: string | null,
-  last: string,
-): string {
-  return [first, middle, last].filter(Boolean).join(" ");
-}
-
-function composeSchoolAddress(school: {
-  address: string | null;
-  city: string | null;
-  lga: string | null;
-  state: string | null;
-  country: string | null;
-}): string {
-  return [school.address, school.city, school.lga, school.state, school.country]
-    .filter(Boolean)
-    .join(", ");
-}
-
-function formatScore(score: number | null): string {
-  if (score === null || score === undefined) return "—";
-  if (score === -1) return "AB";
-  return String(score);
-}
-
-// Fixed "Date Issued" value stamped on every result sheet. See the note
-// on JuniorDefaultA4V1's constant of the same name — update all templates'
-// values together when a new batch of results is issued.
-const DATE_OF_ISSUE = "24 Jul 2026";
-
-// ── Main component ───────────────────────────────────────────────────────────
-
-// See the note on the junior template's signature — `printRef` is a
-// regular prop, not a forwardRef ref, so the parent can attach it via
-// `<Template printRef={ref} />`.
+// `printRef` is a regular prop (not a forwardRef ref). It is attached to the
+// outer .result-page div below, which is the node the viewer rasterises for the
+// PDF download and prints.
 function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
   const {
     student_first_name,
@@ -107,6 +83,8 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
     session,
     school,
   } = result;
+
+  const issueDate = formatIssueDate(result.term.results_published_at);
 
   const studentName = composeStudentName(
     student_first_name,
@@ -159,7 +137,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <header className="flex items-center justify-between gap-4 border-b border-slate-300 pb-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <LogoWithFallback abbr={school.abbr} />
+            <LogoWithFallback accent="violet" abbr={school.abbr} />
             <div className="flex min-h-[45mm] min-w-0 flex-col justify-center gap-1">
               <h1 className="text-[20px] font-bold uppercase leading-tight tracking-wide text-slate-900">
                 {school.name}
@@ -223,27 +201,31 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
             <IdentityCell
               className="col-span-2"
               label="Date Issued"
-              value={DATE_OF_ISSUE}
+              value={issueDate}
             />
           </div>
 
           <div className="mt-1 grid grid-cols-4 gap-0 overflow-hidden rounded-md border border-violet-200">
             <SummaryCell
+              accent="violet"
               className="border-r border-violet-200"
               label="Student's Average"
               value={`${average.toFixed(2)} %`}
             />
             <SummaryCell
+              accent="violet"
               className="border-r border-violet-200"
               label="Class Average"
               value={`${class_average.toFixed(2)} %`}
             />
             <SummaryCell
+              accent="violet"
               className="border-r border-violet-200"
               label="Total Score"
               value={String(total_score)}
             />
             <SummaryCell
+              accent="violet"
               label="Decision"
               value={decision.toUpperCase()}
               valueClassName={
@@ -455,6 +437,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
 
         {/* ── Behaviour ──────────────────────────────────────────────────── */}
         <TraitGrid
+          accent="violet"
           title="Behaviour · Affective Domain"
           rows={behaviourRows}
           columns={4}
@@ -462,6 +445,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <TraitGrid
+          accent="violet"
           title="Skills · Psychomotor Domain"
           rows={skillRows}
           columns={4}
@@ -499,7 +483,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
           <span className="normal-case tracking-normal">
             https://www.lutheranhighschool.ng/results/check
           </span>
-          <span>Issued {DATE_OF_ISSUE}</span>
+          <span>Issued {issueDate}</span>
         </footer>
       </div>
     </>
@@ -507,218 +491,3 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
 }
 
 export default SeniorDefaultA4V1;
-
-// ─── Small reusable subcomponents (violet accent variants) ───────────────────
-
-function IdentityCell({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <div className={`p-1.5 ${className}`}>
-      <p className="text-[7px] uppercase tracking-widest text-slate-500">
-        {label}
-      </p>
-      <p className="mt-0.5 text-[10px] font-semibold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function SummaryCell({
-  label,
-  value,
-  className = "",
-  valueClassName = "text-violet-900",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className={`bg-violet-50 p-1.5 ${className}`}>
-      <p className="text-[7px] uppercase tracking-widest text-violet-900/70">
-        {label}
-      </p>
-      <p className={`mt-0.5 text-[11px] font-bold ${valueClassName}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-// School logo with graceful fallback (identical behaviour to the junior
-// template, but with a violet border to match this template's accent).
-function LogoWithFallback({ abbr }: { abbr: string }) {
-  const [errored, setErrored] = useState(false);
-
-  return (
-    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-visible rounded-full">
-      {errored ? (
-        <span className="px-1 text-center text-[9px] font-semibold leading-tight text-violet-900">
-          {abbr || "LOGO"}
-        </span>
-      ) : (
-        <Image
-          src="/images/lhs_logo.png"
-          alt={`${abbr} logo`}
-          // Matches the 16 x 16 (Tailwind unit = 4px) parent so Next can
-          // reserve exact layout space and skip runtime measurement.
-          width={64}
-          height={64}
-          // Header logo is above the fold on every render — eager-load so
-          // it never flashes in late during printing or PDF capture.
-          priority
-          className="h-full w-full object-contain"
-          onError={() => setErrored(true)}
-        />
-      )}
-    </div>
-  );
-}
-
-function PhotoPlaceholder() {
-  return (
-    <div className="flex h-[30mm] w-[30mm] items-center justify-center border border-dashed border-slate-400 bg-slate-50">
-      <span className="px-1 text-center text-[8px] uppercase leading-tight tracking-widest text-slate-500">
-        Student
-        <br />
-        Photo
-      </span>
-    </div>
-  );
-}
-
-function TraitGrid({
-  title,
-  rows,
-  columns,
-}: {
-  title: string;
-  rows: {
-    trait_id: string;
-    trait_name: string;
-    grade_symbol: string | null;
-    is_absent: boolean;
-  }[];
-  columns: number;
-}) {
-  if (rows.length === 0) return null;
-  const gridClass =
-    columns === 4
-      ? "grid-cols-4"
-      : columns === 3
-        ? "grid-cols-3"
-        : "grid-cols-2";
-  return (
-    <section className="mt-3">
-      <div className="mb-1">
-        <p className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-700">
-          {title}
-        </p>
-      </div>
-      <div className={`grid gap-0.5 ${gridClass}`}>
-        {rows.map((row) => (
-          <div
-            key={row.trait_id}
-            className="flex items-center justify-between rounded-sm border border-slate-300 bg-white px-2 py-0.5"
-          >
-            <span className="text-[9.5px] text-slate-800">
-              {row.trait_name}
-            </span>
-            <span className="rounded-sm border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold leading-none text-violet-900">
-              {row.is_absent ? "—" : row.grade_symbol || "—"}
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RemarkCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-sm border border-slate-300 bg-slate-50 p-2.5">
-      <p className="mb-1 flex items-center gap-2 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-700">
-        {title}
-      </p>
-      <p className="text-[10px] italic leading-snug text-slate-800">
-        {body ? (
-          `"${body}"`
-        ) : (
-          <span className="not-italic text-slate-400">No remark provided.</span>
-        )}
-      </p>
-    </div>
-  );
-}
-
-function LegendCard({
-  title,
-  grades,
-}: {
-  title: string;
-  grades: ResultGrade[];
-}) {
-  const sortedGrades = [...grades].sort((a, b) => b.low - a.low);
-
-  return (
-    <div className="overflow-hidden rounded-sm border border-slate-300">
-      <div className="border-b border-slate-300 bg-slate-100 px-2 py-1">
-        <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-700">
-          {title}
-        </p>
-      </div>
-      <table className="w-full text-[8.5px]">
-        <thead className="text-slate-500">
-          <tr>
-            <th className="px-1.5 py-0.5 text-left font-normal">Range</th>
-            <th className="px-1.5 py-0.5 text-left font-normal">Remark</th>
-            <th className="w-[8mm] px-1.5 py-0.5 text-right font-normal">
-              Symbol
-            </th>
-          </tr>
-        </thead>
-        <tbody className="text-slate-800">
-          {sortedGrades.length === 0 ? (
-            <tr className="border-t border-slate-200">
-              <td
-                colSpan={3}
-                className="px-1.5 py-1 text-center text-slate-400"
-              >
-                No grades configured.
-              </td>
-            </tr>
-          ) : (
-            sortedGrades.map((grade) => (
-              <tr key={grade.id} className="border-t border-slate-200">
-                <td className="px-1.5 py-0 text-slate-500">
-                  {grade.low} – {grade.high}
-                </td>
-                <td
-                  className={`px-1.5 py-0 ${
-                    !grade.passed ? "text-rose-700" : ""
-                  }`}
-                >
-                  {grade.remark}
-                </td>
-                <td
-                  className={`px-1.5 py-0 text-right font-bold ${
-                    !grade.passed ? "text-rose-700" : ""
-                  }`}
-                >
-                  {grade.symbol}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}

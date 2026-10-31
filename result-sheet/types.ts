@@ -1,29 +1,25 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// results.d.ts
+import type { Ref } from "react";
+
+// ──────────────────────────────────────────
+// types.ts
 //
-// Types for the /results check-student-result flow.
+// The types of the result-sheet package.
 //
-// These describe everything a result template needs to render itself
-// faithfully: the response of
-//   POST /api/v1/student/result/check/
-// combined with the arm's assessment configuration, grading formats and
-// school details from
-//   GET /api/v1/student/result/context/
-// by `mergeResultAndContext` in ../page.tsx.
+// They describe everything a result template needs to render itself faithfully:
+// one student's computed result (StudentResultData) together with its context,
+// which is the arm's assessment configuration and grading formats, the school's
+// details and the subjects' teachers (ResultContextResponse). The two are
+// combined into the StudentResultResponse a template draws.
 //
 // Design note:
-//   The check response reuses the shape produced by compute_results() (see
-//   backend results_aggregation.py); the academic context (arm / level /
-//   section / term / session / school) comes from the context endpoint.
-//   The templates only need to know about these types — they never fetch
-//   anything themselves, they just receive `StudentResultResponse` as a
-//   prop.
+//   The result fields follow the shape produced by compute_results() on the
+//   backend (results_aggregation.py). The templates only need these types: they
+//   never fetch anything, they receive a `StudentResultResponse` as a prop.
 //
-//   Because the same template components are reusable inside the broadsheet
-//   "print student results" flow, the shape here is deliberately independent
-//   of any transport concern — a caller that already has all the data in
-//   local state can pass it directly.
-// ─────────────────────────────────────────────────────────────────────────────
+//   The shape is independent of any transport concern. The public result check
+//   builds it from the check endpoint's response (see resultcheck.ts), and a
+//   screen that already holds the data can pass it in directly.
+// ──────────────────────────────────────────
 
 // ── Nested primitives ─────────────────────────────────────────────────────────
 
@@ -105,12 +101,12 @@ export interface ResultArm extends ResultAcademicRef {
   result_template: ResultTemplateMeta | null;
 }
 
-// ── Teacher record (from the result context endpoint) ───────────────────────
+// ── Teacher record (from the result context) ───────────────────────
 
-// Teacher shape returned by /api/v1/student/result/context/ and merged onto
-// each subject row on the frontend. The endpoint is public, so it returns the
-// public identifier only. `public_id` is what the templates render in the
-// Teacher ID column (e.g. "TCH-014").
+// A subject's teacher, as the result context carries it, and as it is merged onto
+// each subject row. The result check is public, so only the public identifier is
+// sent. `public_id` is what the templates render in the Teacher ID column (e.g.
+// "TCH-014").
 export interface TeacherRef {
   public_id: string;
 }
@@ -152,14 +148,18 @@ export interface TraitAssessmentResult {
 // across the arm so templates can iterate confidently.
 export type GradingSummary = Record<string, number>;
 
-// ── Raw check endpoint response ──────────────────────────────────────────────
-// This is what /academics/student/result/check/ actually returns. It carries
-// the per-student result data plus the academic-chain objects in their
-// basic (id/name/abbr) form only. The frontend merges this with
-// ResultContextResponse to produce the enriched StudentResultResponse that
-// templates consume.
+// ── The term, with when its results were published ───────────────────────
+// `results_published_at` is an ISO timestamp in UTC. It is null only when the
+// backend has no publication time for a published term; the templates then
+// print today's date (see formatIssueDate).
+export interface ResultTermRef extends ResultAcademicRef {
+  results_published_at: string | null;
+}
 
-export interface CheckStudentResultResponse {
+// ── One student's computed result ────────────────────────────────────────
+// The numbers and rows of a result, without the academic context around them.
+// The check endpoint returns exactly these fields next to `context`.
+export interface StudentResultData {
   // Class-level context, always surfaced so the template can render
   // "Position 3 of 42" and "Class avg 65.42%" without a second call.
   class_average: number;
@@ -173,6 +173,8 @@ export interface CheckStudentResultResponse {
   student_middle_name: string | null;
   student_last_name: string;
   student_gender: string;
+  // Empty string when the student has no registration number.
+  student_reg_numb: string;
 
   // Aggregates for this student
   total_score: number;
@@ -192,25 +194,16 @@ export interface CheckStudentResultResponse {
   // Remarks
   teachers_remark: string;
   supervisors_remark: string;
-
-  // Basic (id/name/abbr) academic context — enriched during merge.
-  arm: ResultAcademicRef;
-  level: ResultAcademicRef;
-  section: ResultAcademicRef;
-  term: ResultAcademicRef;
-  session: ResultAcademicRef;
-  school: ResultAcademicRef;
 }
 
-// ── Context endpoint response ────────────────────────────────────────────────
-// This is what /api/v1/student/result/context/ returns. It carries the
-// arm's assessment/grading configuration, the school with address parts,
-// and the arm's subject-teacher assignments. The response is stable per
-// arm and can be cached aggressively.
+// ── The result sheet's context ───────────────────────────────────────────
+// Everything a sheet needs beyond one student's own numbers: the arm's formats,
+// grading and template, the level, section, term, session and school, and the
+// subjects with their teachers. Holds no student data.
 
-// One SubjectArm row as returned by the context endpoint. Not to be confused
-// with SubjectAssessmentResult (which is per-student). Used only during the
-// merge step to hydrate `SubjectAssessmentResult.teachers`.
+// One SubjectArm row of the context. Not to be confused with
+// SubjectAssessmentResult, which is per student. Used to hydrate
+// `SubjectAssessmentResult.teachers`.
 export interface ContextSubjectArm {
   subject_arm_id: string;
   display_order: number;
@@ -227,38 +220,34 @@ export interface ResultContextResponse {
   arm: ResultArm;
   level: ResultAcademicRef;
   section: ResultAcademicRef;
-  term: ResultAcademicRef;
+  term: ResultTermRef;
   session: ResultAcademicRef;
   school: ResultSchoolRef;
   subjects: ContextSubjectArm[];
 }
 
-// ── Merged shape templates consume ───────────────────────────────────────────
-// Produced by mergeResultAndContext() in page.tsx from the two raw responses
-// above. `arm` and `school` are upgraded to their enriched types; each
-// `subjects[key]` row is enriched with the matching context teachers list.
-export interface StudentResultResponse extends Omit<
-  CheckStudentResultResponse,
-  "arm" | "school"
-> {
+// ── What a template renders ──────────────────────────────────────────────
+// One student's result with its context spread out, and each subject row
+// hydrated with its teachers. Whatever the data came from (the public check,
+// or a screen for staff), it is turned into this before it reaches a sheet.
+export interface StudentResultResponse extends StudentResultData {
   arm: ResultArm;
+  level: ResultAcademicRef;
+  section: ResultAcademicRef;
+  term: ResultTermRef;
+  session: ResultAcademicRef;
   school: ResultSchoolRef;
 }
 
-// The envelope every API call in this codebase uses.
-export interface ApiEnvelope<T> {
-  message: string;
-  data: T;
-}
-
-// ── Form input types ─────────────────────────────────────────────────────────
-
-// The payload the /results form submits to the backend. Session and term are
-// deliberately absent — they don't reach the backend; the arm_id alone
-// pins down the academic context. The dropdowns exist for user guidance only.
-export interface CheckStudentResultPayload {
-  pin: string;
-  arm_id: string;
-  student_public_id: string;
-  ranking?: "ordinal" | "competition" | "dense";
+// ── The contract every template implements ───────────────────────────────
+export interface ResultTemplateProps {
+  // The student's result, with its context. Templates draw everything from here.
+  result: StudentResultResponse;
+  // Free-form settings from `arm.result_template.config`. A template may read
+  // the keys it knows and must tolerate their absence.
+  config?: Record<string, unknown>;
+  // Attached to the printable A4 page root. The viewer uses it to rasterise
+  // exactly that node for the PDF download. Optional, because a sheet shown
+  // inline needs no print or PDF flow.
+  printRef?: Ref<HTMLDivElement>;
 }

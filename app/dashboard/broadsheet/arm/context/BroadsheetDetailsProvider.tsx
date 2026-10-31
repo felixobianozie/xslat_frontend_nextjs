@@ -111,8 +111,12 @@ export function BroadsheetDetailsProvider({
   const termId = arm?.level.section.term?.id ?? "";
 
   // ── Query 2: result roster ──────────────────────────────────────────────
-  const { data: studentsData, isPending: studentsPending } =
-    useArmResultRoster(armId);
+  const {
+    data: studentsData,
+    isPending: studentsPending,
+    isError: studentsIsError,
+    error: studentsError,
+  } = useArmResultRoster(armId);
 
   // ── Query 3: subjects offered by the arm ────────────────────────────────
   const { data: subjectsData, isPending: subjectsPending } = useQuery<
@@ -134,9 +138,12 @@ export function BroadsheetDetailsProvider({
   });
 
   // ── Query 4: class assessment result ────────────────────────────────────
-  const { data: classResultData, isPending: classResultPending } = useQuery<
-    ApiEnvelope<ClassAssessmentResult>
-  >({
+  const {
+    data: classResultData,
+    isPending: classResultPending,
+    isError: classResultIsError,
+    error: classResultError,
+  } = useQuery<ApiEnvelope<ClassAssessmentResult>>({
     queryKey: ["broadsheet-class-result", armId],
     queryFn: async () => {
       const url = `arm/assessment/compute/?school-id=${SCHOOL_ID}&arm-id=${armId}`;
@@ -149,8 +156,8 @@ export function BroadsheetDetailsProvider({
     refetchOnWindowFocus: false,
   });
 
-  // Surface only the arm error to the user — the other queries silently fall
-  // back to empty/null shapes, which downstream views handle gracefully.
+  // The arm error is shown to the user. The subjects query silently falls back
+  // to an empty list, which the views handle gracefully.
   useEffect(() => {
     if (armIsError && armError) {
       toast.error(
@@ -160,6 +167,27 @@ export function BroadsheetDetailsProvider({
       );
     }
   }, [armIsError, armError]);
+
+  // The roster and the computed results are refused together, for example to a
+  // teacher once the term is published and the school has not allowed teachers
+  // to keep viewing. The views then show empty tables, so the reason is shown
+  // here. One toast covers both, because they fail for the same reason, and the
+  // toastId stops a repeat if a query is retried.
+  const resultsError = studentsIsError
+    ? studentsError
+    : classResultIsError
+      ? classResultError
+      : null;
+  useEffect(() => {
+    if (resultsError) {
+      toast.error(
+        resultsError instanceof Error
+          ? resultsError.message
+          : "Failed to load the results.",
+        { toastId: "broadsheet-results-load-error" },
+      );
+    }
+  }, [resultsError]);
 
   // ── Derived values ─────────────────────────────────────────────────────
   const students = studentsData?.data ?? [];

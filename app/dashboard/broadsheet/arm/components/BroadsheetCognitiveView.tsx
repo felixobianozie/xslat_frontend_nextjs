@@ -171,12 +171,15 @@ export default function BroadsheetCognitiveView({
                 <span className="sr-only">Action</span>
               </th>
               <th
-                className="px-2 py-2 text-center sticky left-10 z-20 bg-indigo-900 w-12 border-r border-r-indigo-700"
+                className="px-2 py-2 text-center sticky left-10 z-20 bg-indigo-900 w-12 border-r border-r-indigo-300"
                 rowSpan={2}
               >
                 SN
               </th>
-              <th className="px-3 py-2 text-left whitespace-nowrap" rowSpan={2}>
+              <th
+                className="px-3 py-2 text-left whitespace-nowrap border-r border-r-indigo-300"
+                rowSpan={2}
+              >
                 Full Name
               </th>
               <th
@@ -286,7 +289,7 @@ export default function BroadsheetCognitiveView({
                   >
                     {rowIndex + 1}
                   </td>
-                  <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44">
+                  <td className="px-3 py-2 text-left whitespace-nowrap text-slate-800 min-w-44 border-r border-r-indigo-100">
                     {personName(student)}
                   </td>
                   <td className="px-2 py-2 text-slate-500 whitespace-nowrap">

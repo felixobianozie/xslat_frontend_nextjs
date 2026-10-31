@@ -1,109 +1,58 @@
 "use client";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TerminalReportJuniorSecondary.tsx
+// ──────────────────────────────────────────
+// templates/JuniorDefaultA4V1.tsx
 //
-// Converted from terminal-report-template-1_junior-secondary.html. Faithful
-// port of the visual design — indigo accent, A4 portrait, grade summary in
-// the cognitive table footer, per-student position surfaced in the identity
-// grid — with every piece of mock data replaced by live props from a
-// StudentResultResponse.
+// Registered against the backend template_key `junior-default-a4v1`. Assigned to arms whose
+// result_template points at that row on the backend's ResultTemplate table.
 //
-// Data mapping (from the check-result response):
+// Design language: indigo accent, A4 portrait, the grade summary in the cognitive
+// table's footer, and the student's position in the identity grid. Ported from
+// terminal-report-template-1_junior-secondary.html.
+//
+// Data mapping (from the StudentResultResponse the sheet is given):
 //   Header / identity ← result.school, result.arm/level/section, result.term,
 //                       result.session, and the student name fields.
 //   Summary strip     ← result.average, class_average, total_score, decision.
 //   Cognitive table   ← result.subjects (rows), result.arm.cognitive_assessment_format.units
-//                       (unit column headers), result.grading_summary (footer row).
+//                       (unit column headers), result.grading_summary.
+//   Teacher ID col.   ← result.subjects[*].teachers[0].public_id (hydrated from
+//                       the result context's subjects).
 //   Behaviour grid    ← result.behaviours.
 //   Skills grid       ← result.skills.
 //   Remarks           ← result.teachers_remark, result.supervisors_remark.
 //   Grading legends   ← result.arm.cog_grading_format / aff_grading_format /
 //                       psy_grading_format (their `.grades` arrays).
+//   Date issued       ← result.term.results_published_at, printed as the WAT date
+//                       (see formatIssueDate); today's date when it is missing.
 //
-// Assumptions the mockup baked in that the runtime data may not satisfy:
-//   - School logo image: imported from /images/school_logo; a placeholder
-//     circle showing the school abbreviation renders when the image is
-//     absent or fails to load (see LogoWithFallback below).
-//   - Student photo: no field exists on the Student model yet, so the
-//     dashed square from the mockup renders as a permanent placeholder.
-//   - Teacher ID column: rendered as an empty cell for now — the data
-//     isn't threaded through the check-result response yet.
-// ─────────────────────────────────────────────────────────────────────────────
+// Assumptions the runtime data may not satisfy:
+//   - School logo: served from /images/lhs_logo.png; a circle showing the school
+//     abbreviation renders when the image is absent or fails to load.
+//   - Student photo: no field exists on the Student model yet, so the dashed
+//     square renders as a permanent placeholder.
+// ──────────────────────────────────────────
 
-import { useState } from "react";
-import Image from "next/image";
+import type { ResultTemplateProps } from "../types";
+import IdentityCell from "../components/IdentityCell";
+import LegendCard from "../components/LegendCard";
+import LogoWithFallback from "../components/LogoWithFallback";
+import PhotoPlaceholder from "../components/PhotoPlaceholder";
+import RemarkCard from "../components/RemarkCard";
+import SummaryCell from "../components/SummaryCell";
+import TraitGrid from "../components/TraitGrid";
+import {
+  composeSchoolAddress,
+  composeStudentName,
+  formatIssueDate,
+  formatScore,
+} from "../utils/formatting";
+import { PRINT_STYLES } from "../utils/printStyles";
 
-import type { ResultTemplateProps } from "./types";
-import type { ResultGrade } from "./results";
-
-// The two non-Tailwind styles the mockup needed — the exact A4 print size
-// and the print-media reset. Kept small and scoped inline so they only
-// apply when this template mounts. Justified exception to the Tailwind-only
-// rule: `@page` and `@media print` are not utility-expressible.
-const PRINT_STYLES = `
-  @page { size: A4 portrait; margin: 0; }
-  @media print {
-    html, body { background: white; }
-    .result-page { box-shadow: none !important; margin: 0 !important; }
-  }
-`;
-
-// ── Presentational helpers ───────────────────────────────────────────────────
-
-function composeStudentName(
-  first: string,
-  middle: string | null,
-  last: string,
-): string {
-  return [first, middle, last].filter(Boolean).join(" ");
-}
-
-// Format a school's full address line from its parts. Filters out empties
-// so a missing LGA/state doesn't leave a dangling comma.
-function composeSchoolAddress(school: {
-  address: string | null;
-  city: string | null;
-  lga: string | null;
-  state: string | null;
-  country: string | null;
-}): string {
-  return [school.address, school.city, school.lga, school.state, school.country]
-    .filter(Boolean)
-    .join(", ");
-}
-
-// Render a single score cell. See FallbackTerminalReport for the same rules —
-// duplicated locally so this template is self-contained.
-function formatScore(score: number | null): string {
-  if (score === null || score === undefined) return "";
-  if (score === -1) return "AB";
-  return String(score);
-}
-
-// Format today's date for the "Date Issued" field. Uses "DD MMM YYYY" — same
-// treatment as the mockup ("23 Jul 2026").
-function formatToday(): string {
-  return new Date().toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-// ── Main component ───────────────────────────────────────────────────────────
-
-// The `printRef` prop is what `ResultsPreview` uses to grab a handle on the
-// rendered A4 sheet for html2canvas / PDF export. It's attached to the
-// outer .result-page div below. Previously this component was wrapped in
-// forwardRef, but the parent passes the ref as a regular prop (matching
-// the interface in ResultTemplateProps), not as `ref={...}` — so the
-// forwardRef version silently ignored the ref and the download button
-// couldn't find the node to rasterise.
-function TerminalReportJuniorSecondary({
-  result,
-  printRef,
-}: ResultTemplateProps) {
+// `printRef` is a regular prop (not a forwardRef ref). It is attached to the
+// outer .result-page div below, which is the node the viewer rasterises for the
+// PDF download and prints.
+function JuniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
   const {
     student_first_name,
     student_middle_name,
@@ -131,6 +80,8 @@ function TerminalReportJuniorSecondary({
   } = result;
 
   // ── Derived values ─────────────────────────────────────────────────────────
+
+  const issueDate = formatIssueDate(result.term.results_published_at);
 
   const studentName = composeStudentName(
     student_first_name,
@@ -199,7 +150,7 @@ function TerminalReportJuniorSecondary({
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <header className="flex items-center justify-between gap-4 border-b border-slate-300 pb-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <LogoWithFallback abbr={school.abbr} />
+            <LogoWithFallback accent="indigo" abbr={school.abbr} />
             <div className="flex min-h-[45mm] min-w-0 flex-col justify-center gap-1">
               <h1 className="text-[20px] font-bold uppercase leading-tight tracking-wide text-slate-900">
                 {school.name}
@@ -265,26 +216,30 @@ function TerminalReportJuniorSecondary({
               label="Position"
               value={String(position)}
             />
-            <IdentityCell label="Date Issued" value={formatToday()} />
+            <IdentityCell label="Date Issued" value={issueDate} />
           </div>
 
           <div className="mt-1 grid grid-cols-4 gap-0 overflow-hidden rounded-md border border-indigo-200">
             <SummaryCell
+              accent="indigo"
               className="border-r border-indigo-200"
               label="Student's Average"
               value={`${average.toFixed(2)} %`}
             />
             <SummaryCell
+              accent="indigo"
               className="border-r border-indigo-200"
               label="Class Average"
               value={`${class_average.toFixed(2)} %`}
             />
             <SummaryCell
+              accent="indigo"
               className="border-r border-indigo-200"
               label="Total Score"
               value={String(total_score)}
             />
             <SummaryCell
+              accent="indigo"
               label="Decision"
               value={decision.toUpperCase()}
               valueClassName={
@@ -430,7 +385,12 @@ function TerminalReportJuniorSecondary({
                       {subject.remark ?? "—"}
                     </td>
                     <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
-                      {/* Teacher ID column intentionally blank — data not yet threaded through. */}
+                      {/* First assigned teacher's public_id, or an em-dash
+                          if no teacher is assigned in the SubjectArm →
+                          teachers M2M. The merge step on the frontend
+                          populates `subject.teachers` from the context
+                          endpoint's payload. */}
+                      {subject.teachers?.[0]?.public_id ?? "—"}
                     </td>
                   </tr>
                 );
@@ -479,19 +439,21 @@ function TerminalReportJuniorSecondary({
                     <span className="text-[7.5px] font-semibold uppercase tracking-widest text-slate-500">
                       Grade Summary
                     </span>
-                    {gradeSummaryEntries.map(([prefix, count]) => {
-                      const isFail = prefix.toUpperCase().startsWith("F");
-                      return (
-                        <span
-                          key={prefix}
-                          className={`font-bold ${
-                            isFail ? "text-rose-700" : "text-slate-900"
-                          }`}
-                        >
-                          {prefix}&times;{count}
-                        </span>
-                      );
-                    })}
+                    {gradeSummaryEntries
+                      .filter(([, count]) => count > 0)
+                      .map(([prefix, count]) => {
+                        const isFail = prefix.toUpperCase().startsWith("F");
+                        return (
+                          <span
+                            key={prefix}
+                            className={`font-bold ${
+                              isFail ? "text-rose-700" : "text-slate-900"
+                            }`}
+                          >
+                            {prefix}&times;{count}
+                          </span>
+                        );
+                      })}
                   </div>
                 </td>
               </tr>
@@ -501,6 +463,7 @@ function TerminalReportJuniorSecondary({
 
         {/* ── Behaviour ──────────────────────────────────────────────────── */}
         <TraitGrid
+          accent="indigo"
           title="Behaviour · Affective Domain"
           rows={behaviourRows}
           columns={4}
@@ -508,6 +471,7 @@ function TerminalReportJuniorSecondary({
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <TraitGrid
+          accent="indigo"
           title="Skills · Psychomotor Domain"
           rows={skillRows}
           columns={4}
@@ -542,244 +506,14 @@ function TerminalReportJuniorSecondary({
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <footer className="mt-4 flex items-center justify-between border-t border-slate-300 pt-2 text-[7px] uppercase tracking-widest text-slate-500">
-          <span className="normal-case tracking-normal">/results</span>
-          <span>Issued {formatToday()}</span>
+          <span className="normal-case tracking-normal">
+            https://www.lutheranhighschool.ng/results/check
+          </span>
+          <span>Issued {issueDate}</span>
         </footer>
       </div>
     </>
   );
 }
 
-export default TerminalReportJuniorSecondary;
-
-// ─── Small reusable subcomponents ────────────────────────────────────────────
-// Local to this file so the template stays self-contained and one file per
-// template remains the unit of ownership.
-
-function IdentityCell({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <div className={`p-1.5 ${className}`}>
-      <p className="text-[7px] uppercase tracking-widest text-slate-500">
-        {label}
-      </p>
-      <p className="mt-0.5 text-[10px] font-semibold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function SummaryCell({
-  label,
-  value,
-  className = "",
-  valueClassName = "text-indigo-900",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className={`bg-indigo-50 p-1.5 ${className}`}>
-      <p className="text-[7px] uppercase tracking-widest text-indigo-900/70">
-        {label}
-      </p>
-      <p className={`mt-0.5 text-[11px] font-bold ${valueClassName}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-// Logo with graceful fallback:
-//   - Tries to load /images/school_logo.png via next/image so we benefit
-//     from Next.js image optimisation (format conversion, sizing hints,
-//     eager loading for above-the-fold content).
-//   - If the load fails (missing file, network issue, invalid image),
-//     swaps to an indigo bordered circle showing the school abbreviation.
-// Uses React state so re-renders don't blow away the fallback we've chosen,
-// and there's no imperative DOM manipulation.
-function LogoWithFallback({ abbr }: { abbr: string }) {
-  const [errored, setErrored] = useState(false);
-
-  return (
-    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-visible rounded-full">
-      {errored ? (
-        <span className="px-1 text-center text-[9px] font-semibold leading-tight text-indigo-900">
-          {abbr || "LOGO"}
-        </span>
-      ) : (
-        <Image
-          src="/images/lhs_logo.png"
-          alt={`${abbr} logo`}
-          // Matches the 16 x 16 (Tailwind unit = 4px) parent so Next can
-          // reserve exact layout space and skip runtime measurement. If the
-          // container size ever changes, update these numbers to match.
-          width={64}
-          height={64}
-          // Header logo is above the fold on every render — eager-load so
-          // it never flashes in late during printing or PDF capture.
-          priority
-          className="h-full w-full object-contain"
-          onError={() => setErrored(true)}
-        />
-      )}
-    </div>
-  );
-}
-
-// Student photo — placeholder for now (no field on the model).
-function PhotoPlaceholder() {
-  return (
-    <div className="flex h-[30mm] w-[30mm] items-center justify-center border border-dashed border-slate-400 bg-slate-50">
-      <span className="px-1 text-center text-[8px] uppercase leading-tight tracking-widest text-slate-500">
-        Student
-        <br />
-        Photo
-      </span>
-    </div>
-  );
-}
-
-// Behaviour / Skills tile grid — 4 columns by default per the mockup. Rows
-// come in already-sorted so we just render them.
-function TraitGrid({
-  title,
-  rows,
-  columns,
-}: {
-  title: string;
-  rows: {
-    trait_id: string;
-    trait_name: string;
-    grade_symbol: string | null;
-    is_absent: boolean;
-  }[];
-  columns: number;
-}) {
-  if (rows.length === 0) return null;
-  // Tailwind can't build `grid-cols-{n}` dynamically at build time — the
-  // safelist for known small counts covers the mockup's 4-column layout.
-  const gridClass =
-    columns === 4
-      ? "grid-cols-4"
-      : columns === 3
-        ? "grid-cols-3"
-        : "grid-cols-2";
-  return (
-    <section className="mt-3">
-      <div className="mb-1">
-        <p className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-700">
-          {title}
-        </p>
-      </div>
-      <div className={`grid gap-0.5 ${gridClass}`}>
-        {rows.map((row) => (
-          <div
-            key={row.trait_id}
-            className="flex items-center justify-between rounded-sm border border-slate-300 bg-white px-2 py-0.5"
-          >
-            <span className="text-[9.5px] text-slate-800">
-              {row.trait_name}
-            </span>
-            <span className="rounded-sm border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold leading-none text-indigo-900">
-              {row.is_absent ? "—" : (row.grade_symbol ?? "—")}
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RemarkCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-sm border border-slate-300 bg-slate-50 p-2.5">
-      <p className="mb-1 flex items-center gap-2 text-[8px] font-bold uppercase tracking-[0.2em] text-slate-700">
-        {title}
-      </p>
-      <p className="text-[10px] italic leading-snug text-slate-800">
-        {body ? (
-          `"${body}"`
-        ) : (
-          <span className="not-italic text-slate-400">No remark provided.</span>
-        )}
-      </p>
-    </div>
-  );
-}
-
-// A single grading-format card in the legend row.
-function LegendCard({
-  title,
-  grades,
-}: {
-  title: string;
-  grades: ResultGrade[];
-}) {
-  // Legends read best low-to-high (ascending). The API returns them in the
-  // model's default ordering; we sort here to keep the visual consistent.
-  const sortedGrades = [...grades].sort((a, b) => b.low - a.low);
-
-  return (
-    <div className="overflow-hidden rounded-sm border border-slate-300">
-      <div className="border-b border-slate-300 bg-slate-100 px-2 py-1">
-        <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-700">
-          {title}
-        </p>
-      </div>
-      <table className="w-full text-[8.5px]">
-        <thead className="text-slate-500">
-          <tr>
-            <th className="px-1.5 py-0.5 text-left font-normal">Range</th>
-            <th className="px-1.5 py-0.5 text-left font-normal">Remark</th>
-            <th className="w-[8mm] px-1.5 py-0.5 text-right font-normal">
-              Symbol
-            </th>
-          </tr>
-        </thead>
-        <tbody className="text-slate-800">
-          {sortedGrades.length === 0 ? (
-            <tr className="border-t border-slate-200">
-              <td
-                colSpan={3}
-                className="px-1.5 py-1 text-center text-slate-400"
-              >
-                No grades configured.
-              </td>
-            </tr>
-          ) : (
-            sortedGrades.map((grade) => (
-              <tr key={grade.id} className="border-t border-slate-200">
-                <td className="px-1.5 py-0 text-slate-500">
-                  {grade.low} – {grade.high}
-                </td>
-                <td
-                  className={`px-1.5 py-0 ${
-                    !grade.passed ? "text-rose-700" : ""
-                  }`}
-                >
-                  {grade.remark}
-                </td>
-                <td
-                  className={`px-1.5 py-0 text-right font-bold ${
-                    !grade.passed ? "text-rose-700" : ""
-                  }`}
-                >
-                  {grade.symbol}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+export default JuniorDefaultA4V1;
