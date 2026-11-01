@@ -151,99 +151,8 @@ export default function Navbar() {
             : "bg-indigo-950"
         }`}
       >
-        {/* ── Top bar: logo + contact info ── */}
-        <div
-          className={`transition-all duration-300 overflow-hidden ${
-            scrolled ? "max-h-0 opacity-0 py-0" : "max-h-40 opacity-100"
-          }`}
-        >
-          <div className="container mx-auto px-6 lg:px-16 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* Logo + school name */}
-            <Link href="/" className="flex items-center gap-4 group">
-              <div className="relative w-16 h-16 bg-white border-2 border-blue-500 flex items-center justify-center shrink-0 shadow-md">
-                {/* <span className="text-indigo-950 font-black text-lg">LHS</span> */}
-                <Image
-                  src="/images/lhs_logo.png"
-                  alt="Lutheran High School Logo"
-                  fill={true}
-                  className="object-contain p-2"
-                />
-              </div>
-
-              <div>
-                <h1
-                  className="text-xl lg:text-2xl font-bold text-white group-hover:text-amber-300 transition-colors"
-                  style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-                >
-                  Lutheran High School
-                </h1>
-                <p className="text-indigo-400 text-xs">
-                  Obot Idim, Ibesikpo Asutan LGA.
-                </p>
-                <p className="text-amber-400 text-xs italic">
-                  ...upholding academic standards since 1950
-                </p>
-              </div>
-            </Link>
-
-            {/*
-              Contact info block.
-              Layout: icon on the left, value directly to its right — single column of text.
-              No label text underneath; the icons communicate context.
-            */}
-            <div className="hidden md:flex items-center gap-5 shrink-0">
-              {/* Phone */}
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-800/70 border border-indigo-700/50 flex items-center justify-center shrink-0 text-amber-400">
-                  {/* Mobile / phone handset icon */}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-                  </svg>
-                </div>
-                <span className="text-white font-semibold text-sm leading-none">
-                  +2347040251300
-                </span>
-              </div>
-
-              <div className="w-px h-8 bg-indigo-700/70" />
-
-              {/* Clock / hours */}
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-800/70 border border-indigo-700/50 flex items-center justify-center shrink-0 text-amber-400">
-                  {/* Clock icon */}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12 6 12 12 16 14" />
-                  </svg>
-                </div>
-                <span className="text-white font-semibold text-sm leading-none">
-                  07:00am - 02:00pm
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* ── Nav bar ── */}
-        <div className="border-t border-indigo-800/60">
+        <div className="border-b border-indigo-800/60">
           <div className="container mx-auto px-6 lg:px-16">
             {/*
               Three-zone row:
@@ -486,8 +395,8 @@ export default function Navbar() {
 
         {/* ── Mobile menu drawer ── */}
         <div
-          className={`lg:hidden border-t border-indigo-800/60 overflow-hidden transition-all duration-300 ${
-            menuOpen ? "max-h-screen" : "max-h-0"
+          className={`lg:hidden overflow-hidden transition-all duration-300 ${
+            menuOpen ? "max-h-screen border-b border-indigo-800/60" : "max-h-0"
           }`}
         >
           <nav className="container mx-auto px-6 py-4 flex flex-col gap-1">
@@ -549,6 +458,97 @@ export default function Navbar() {
               )}
             </div>
           </nav>
+        </div>
+
+        {/* ── Top bar: logo + contact info ── */}
+        <div
+          className={`transition-all duration-300 overflow-hidden ${
+            scrolled ? "max-h-0 opacity-0 py-0" : "max-h-40 opacity-100"
+          }`}
+        >
+          <div className="container mx-auto px-6 lg:px-16 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Logo + school name */}
+            <Link href="/" className="flex items-center gap-4 group">
+              <div className="relative w-16 h-16 bg-white border-2 border-blue-500 flex items-center justify-center shrink-0 shadow-md">
+                {/* <span className="text-indigo-950 font-black text-lg">LHS</span> */}
+                <Image
+                  src="/images/lhs_logo.png"
+                  alt="Lutheran High School Logo"
+                  fill={true}
+                  className="object-contain p-2"
+                />
+              </div>
+
+              <div>
+                <h1
+                  className="text-xl lg:text-2xl font-bold text-white group-hover:text-amber-300 transition-colors"
+                  style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                >
+                  Lutheran High School
+                </h1>
+                <p className="text-indigo-400 text-xs">
+                  Obot Idim, Ibesikpo Asutan LGA.
+                </p>
+                <p className="text-amber-400 text-xs italic">
+                  ...upholding academic standards since 1950
+                </p>
+              </div>
+            </Link>
+
+            {/*
+              Contact info block.
+              Layout: icon on the left, value directly to its right — single column of text.
+              No label text underneath; the icons communicate context.
+            */}
+            <div className="hidden md:flex items-center gap-5 shrink-0">
+              {/* Phone */}
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-800/70 border border-indigo-700/50 flex items-center justify-center shrink-0 text-amber-400">
+                  {/* Mobile / phone handset icon */}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                  </svg>
+                </div>
+                <span className="text-white font-semibold text-sm leading-none">
+                  +2347040251300
+                </span>
+              </div>
+
+              <div className="w-px h-8 bg-indigo-700/70" />
+
+              {/* Clock / hours */}
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-800/70 border border-indigo-700/50 flex items-center justify-center shrink-0 text-amber-400">
+                  {/* Clock icon */}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </div>
+                <span className="text-white font-semibold text-sm leading-none">
+                  07:00am - 02:00pm
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
     </div>
