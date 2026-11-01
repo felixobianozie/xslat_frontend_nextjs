@@ -313,7 +313,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
                   Remark
                 </th>
                 <th
-                  className="w-[15mm] whitespace-nowrap border border-violet-500 px-1 py-1"
+                  className="w-[22mm] whitespace-nowrap border border-violet-500 px-2 py-1"
                   rowSpan={2}
                 >
                   Teacher ID
@@ -391,7 +391,7 @@ function SeniorDefaultA4V1({ result, printRef }: ResultTemplateProps) {
                     >
                       {subject.remark ?? "—"}
                     </td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
+                    <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600">
                       {/* First assigned teacher's public_id, or an em-dash
                           if none. Merged in on the frontend from the
                           result context endpoint (same as the junior

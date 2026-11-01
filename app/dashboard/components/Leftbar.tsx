@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   BookOpen,
   DollarSign,
+  MonitorCheck,
   Globe,
   Settings,
   ClipboardList,
@@ -48,7 +49,13 @@ const navItems: NavItem[] = [
     icon: BookOpen,
     activeWhenStartsWith: ["/dashboard/broadsheet/arm"],
   },
-  { label: "Fees", href: "/coming-soon", icon: DollarSign },
+  {
+    label: "Fees",
+    href: "/dashboard/fees/arms",
+    icon: DollarSign,
+    activeWhenStartsWith: ["/dashboard/fees/arm"],
+  },
+  { label: "CBT", href: "/coming-soon", icon: MonitorCheck },
 ];
 
 const bottomNavItems: NavItem[] = [

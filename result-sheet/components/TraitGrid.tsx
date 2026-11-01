@@ -1,5 +1,10 @@
 import { ACCENTS, type Accent } from "../utils/accent";
 
+// What a rating chip shows when the student has no grade for the trait, or was
+// absent. The chip is never left empty, so it keeps the same height and width
+// whether or not a grade has been given.
+const NO_GRADE = "—";
+
 // The behaviour or skills tiles, four to a row by default. Rows come in already
 // sorted. The grade chip is drawn in the sheet's accent.
 export default function TraitGrid({
@@ -47,7 +52,7 @@ export default function TraitGrid({
             <span
               className={`rounded-sm border ${a.border200} ${a.bg50} px-1.5 py-0.5 text-[10px] font-bold leading-none ${a.text900}`}
             >
-              {row.is_absent ? "" : row.grade_symbol || ""}
+              {row.is_absent || !row.grade_symbol ? NO_GRADE : row.grade_symbol}
             </span>
           </div>
         ))}

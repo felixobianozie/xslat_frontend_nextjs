@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 /* ── Target launch date — update as needed ── */
-const TARGET = new Date("2026-06-08T00:00:00Z");
+const TARGET = new Date("2026-12-30T00:00:00Z");
 
 function useCountdown(target: Date) {
   const calc = () => {
@@ -24,39 +26,6 @@ function useCountdown(target: Date) {
   }, []);
   return time;
 }
-
-const upcoming = [
-  {
-    icon: "🏆",
-    title: "Alumni Portal",
-    desc: "A dedicated space for old students to reconnect, share achievements, and give back.",
-    eta: "In Development",
-  },
-  {
-    icon: "💳",
-    title: "Online Fee Payment",
-    desc: "Seamlessly pay school fees, view payment history, and download receipts from anywhere.",
-    eta: "Coming Soon",
-  },
-  {
-    icon: "📊",
-    title: "Student Results Portal",
-    desc: "Check terminal results, transcripts, and academic progress reports securely online.",
-    eta: "Beta Phase",
-  },
-  {
-    icon: "📸",
-    title: "Photo Gallery",
-    desc: "Memories from sports day, graduation, cultural events, and life inside the Luthisco Republic.",
-    eta: "In Development",
-  },
-];
-
-const etaBadge: Record<string, string> = {
-  "Coming Soon": "bg-amber-100 text-amber-700 border-amber-200",
-  "In Development": "bg-violet-100 text-violet-700 border-violet-200",
-  "Beta Phase": "bg-emerald-100 text-emerald-700 border-emerald-200",
-};
 
 function Pad(n: number) {
   return String(n).padStart(2, "0");
@@ -79,9 +48,17 @@ function CountUnit({ value, label }: { value: number; label: string }) {
 }
 
 export default function ComingSoonPage() {
+  const router = useRouter();
   const time = useCountdown(TARGET);
   const [email, setEmail] = useState("");
   const [subState, setSubState] = useState<"idle" | "done">("idle");
+
+  // Back to the page the visitor came from. A page opened directly (a new tab or a
+  // typed address) has no history to go back to, so it goes to the home page.
+  function goBack() {
+    if (window.history.length > 1) router.back();
+    else router.push("/");
+  }
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -126,6 +103,17 @@ export default function ComingSoonPage() {
         ))}
 
         <div className="relative container mx-auto px-6 lg:px-16 py-16 lg:py-24 text-center">
+          <div className="flex justify-start mb-8">
+            <button
+              type="button"
+              onClick={goBack}
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back
+            </button>
+          </div>
+
           <h1
             className="text-5xl lg:text-7xl font-bold text-white leading-tight mb-4"
             style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
@@ -176,54 +164,9 @@ export default function ComingSoonPage() {
         </div>
       </div>
 
-      {/* ── Upcoming features ── */}
+      {/* Where to go while this feature is in the works */}
       <div className="container mx-auto px-6 lg:px-16 py-16 lg:py-20">
-        <div className="text-center mb-12">
-          <span className="inline-block text-xs font-bold uppercase tracking-[0.22em] text-violet-600 mb-3">
-            What's Coming
-          </span>
-          <h2
-            className="text-3xl lg:text-4xl font-bold text-indigo-950"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-          >
-            Features in the Pipeline
-          </h2>
-          <div className="flex items-center justify-center gap-3 mt-4">
-            <div className="w-10 h-px bg-indigo-200" />
-            <div className="w-2 h-2 rounded-full bg-amber-400" />
-            <div className="w-10 h-px bg-indigo-200" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {upcoming.map(({ icon, title, desc, eta }) => (
-            <div
-              key={title}
-              className="bg-white border border-slate-200 rounded-2xl p-6 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5 transition-all group"
-            >
-              <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                {icon}
-              </div>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <h3
-                  className="font-bold text-indigo-950 text-base"
-                  style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-                >
-                  {title}
-                </h3>
-                <span
-                  className={`inline-block shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold border ${etaBadge[eta]}`}
-                >
-                  {eta}
-                </span>
-              </div>
-              <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Bottom CTA */}
-        <div className="mt-16 text-center">
+        <div className="text-center">
           <p className="text-slate-500 text-sm mb-4">
             In the meantime, you can still
           </p>
