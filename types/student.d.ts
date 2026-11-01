@@ -97,6 +97,36 @@ interface StudentRecord {
   current_arm: ClassArm | null;
 }
 
+// ── The student profile page ──────────────────────────────────────────
+// What GET student/detail/ returns: the student's identity, contact details and
+// addresses, when the record was created, the student's portfolio at this school
+// (never another school's) and the current class when it is a class of this
+// school. `o_` is the address of origin and `r_` the residential address.
+interface StudentProfileRecord {
+  id: string;
+  public_id: string;
+  first_name: string;
+  middle_name: string;
+  last_name: string;
+  gender: "M" | "F" | "O";
+  dob: string; // ISO date string (YYYY-MM-DD)
+  email: string;
+  phone: string;
+  r_address: string;
+  r_city: string;
+  r_lga: string;
+  r_state: string;
+  r_country: string;
+  o_address: string;
+  o_city: string;
+  o_lga: string;
+  o_state: string;
+  o_country: string;
+  created_on: string; // ISO timestamp
+  portfolios: StudentPortfolio[];
+  current_arm: ClassArm | null;
+}
+
 // Form input shape for creating a new student.
 // Sent to POST student/list/ (StudentSerializer create path).
 //

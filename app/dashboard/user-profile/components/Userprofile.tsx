@@ -34,7 +34,7 @@
 // The camera button is a placeholder until photos are built.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useId, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -51,6 +51,11 @@ import {
   formatProfileDate,
   joinAddress,
 } from "../../components/Profilecard";
+import {
+  AddressFields,
+  SelectField,
+  TextField,
+} from "../../components/Profilefields";
 import ProfilePhoto from "../../components/Profilephoto";
 import VerifyEmailPanel from "../../components/Verifyemailpanel";
 import VerifyPhonePanel from "../../components/Verifyphonepanel";
@@ -104,6 +109,22 @@ const MAX_LENGTH: Record<EditableField, number> = {
   o_state: 30,
   o_country: 30,
 };
+
+// The inputs of an address block, in the order they are shown.
+function addressFields(prefix: "r" | "o") {
+  return [
+    { suffix: "address", label: "Address" },
+    { suffix: "city", label: "City" },
+    { suffix: "district", label: "District" },
+    { suffix: "state", label: "State" },
+    { suffix: "country", label: "Country" },
+  ].map(({ suffix, label }) => {
+    const name = `${prefix}_${suffix}` as EditableField;
+    return { name, label, maxLength: MAX_LENGTH[name] };
+  });
+}
+const RESIDENTIAL_FIELDS = addressFields("r");
+const OFFICE_FIELDS = addressFields("o");
 
 const GENDER_OPTIONS: { value: ProfileGender; label: string }[] = [
   { value: "NOTA", label: "Not specified" },
@@ -362,14 +383,14 @@ export default function UserProfile({
               <div className="flex flex-col gap-4">
                 <AddressFields
                   title="Residential"
-                  prefix="r"
-                  form={form}
+                  fields={RESIDENTIAL_FIELDS}
+                  values={form}
                   onChange={setField}
                 />
                 <AddressFields
                   title="Office"
-                  prefix="o"
-                  form={form}
+                  fields={OFFICE_FIELDS}
+                  values={form}
                   onChange={setField}
                 />
               </div>
@@ -531,118 +552,6 @@ function VerifyButton({ onClick }: { onClick: () => void }) {
     >
       Verify
     </button>
-  );
-}
-
-const INPUT_CLASSES =
-  "w-full px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 border border-slate-200 rounded-xl bg-white focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all";
-
-function TextField({
-  label,
-  value,
-  onChange,
-  maxLength,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  maxLength: number;
-  required?: boolean;
-}) {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-slate-500">
-        {label}
-        {required && <span className="text-red-500"> *</span>}
-      </label>
-      <input
-        id={id}
-        type="text"
-        value={value}
-        maxLength={maxLength}
-        required={required}
-        onChange={(e) => onChange(e.target.value)}
-        className={INPUT_CLASSES}
-      />
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-slate-500">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`cursor-pointer ${INPUT_CLASSES}`}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-// The five fields of one address, residential ("r") or office ("o").
-function AddressFields({
-  title,
-  prefix,
-  form,
-  onChange,
-}: {
-  title: string;
-  prefix: "r" | "o";
-  form: ProfileForm;
-  onChange: (field: EditableField, value: string) => void;
-}) {
-  const fields: { suffix: string; label: string }[] = [
-    { suffix: "address", label: "Address" },
-    { suffix: "city", label: "City" },
-    { suffix: "district", label: "District" },
-    { suffix: "state", label: "State" },
-    { suffix: "country", label: "Country" },
-  ];
-
-  return (
-    <fieldset>
-      <legend className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-        {title}
-      </legend>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {fields.map(({ suffix, label }) => {
-          const field = `${prefix}_${suffix}` as EditableField;
-          return (
-            <TextField
-              key={field}
-              label={label}
-              value={form[field]}
-              maxLength={MAX_LENGTH[field]}
-              onChange={(value) => onChange(field, value)}
-            />
-          );
-        })}
-      </div>
-    </fieldset>
   );
 }
 
