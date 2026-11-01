@@ -24,6 +24,10 @@ export function useClientAuthFetch() {
       method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
       headers?: Record<string, string>;
       body?: Record<string, any> | null;
+      // How to read a SUCCESSFUL response. "json" (default) normalizes the
+      // envelope; "blob" returns raw bytes for downloads. Passed straight
+      // through to authFetch.
+      responseType?: "json" | "blob";
       signal?: AbortSignal; // Optional abort signal for timeout / cancellation
     } = {},
   ): Promise<ApiResponse<T>> {

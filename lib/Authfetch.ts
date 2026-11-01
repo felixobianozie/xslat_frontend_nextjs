@@ -6,6 +6,16 @@
  * `refreshSession`, then retries the original request with the new token.
  * If the refresh itself fails, `onAuthFailure` is called (e.g. to sign the user out).
  *
+ * Response handling:
+ *   - By default (`responseType: "json"`) the response is normalized by
+ *     `handleFetchErrors` into { data } / { error }.
+ *   - With `responseType: "blob"` a SUCCESSFUL response is returned as a raw
+ *     Blob under `data`, for binary downloads such as a PDF. This skips
+ *     `handleFetchErrors` on success only, because that helper reads the body as
+ *     JSON, which would fail on binary data and consume the stream. Failures
+ *     still go through `handleFetchErrors`, so error shapes are identical to
+ *     JSON requests.
+ *
  * @param endpoint - A path relative to baseURL (e.g. "users/me/") or a full URL
  * @param config   - Access token, optional refresh callbacks, request options, etc.
  * @returns        { data } on success or { error } on failure — never throws
@@ -30,6 +40,9 @@ type FetchAuthConfig = {
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     headers?: Record<string, string>;
     body?: Record<string, any> | null;
+    // How to read a SUCCESSFUL response. "json" (default) normalizes the
+    // envelope; "blob" returns raw bytes for downloads (for example a PDF).
+    responseType?: "json" | "blob";
     signal?: AbortSignal; // Optional abort signal for timeout / cancellation
   };
 };
@@ -58,6 +71,8 @@ async function authFetch<T = any>(
   // Helper: builds a RequestInit from the given token and options.
   // Defined as an inner function so we can call it again with a refreshed token
   // without duplicating the config assembly logic.
+  const responseType = options.responseType ?? "json";
+
   function buildRequestConfig(token: string): RequestInit {
     return {
       method: options.method ?? DEFAULT_CONFIG.method,
@@ -69,6 +84,17 @@ async function authFetch<T = any>(
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
     };
+  }
+
+  // Turns a received Response into our normalized ApiResponse. A successful blob
+  // request returns the raw Blob and skips handleFetchErrors (which reads the
+  // body as JSON). Every error, whatever the responseType, still flows through
+  // handleFetchErrors so error shapes stay identical across the app.
+  async function readResponse(res: Response): Promise<ApiResponse<T>> {
+    if (responseType === "blob" && res.ok) {
+      return { data: (await res.blob()) as unknown as T };
+    }
+    return handleFetchErrors<T>(res);
   }
 
   try {
@@ -92,7 +118,7 @@ async function authFetch<T = any>(
         }
 
         // Return the error from the original failed response
-        return handleFetchErrors<T>(response);
+        return readResponse(response);
       }
 
       // Refresh succeeded — retry the request with the new token.
@@ -102,11 +128,11 @@ async function authFetch<T = any>(
         url,
         buildRequestConfig(newSession.accessToken),
       );
-      return handleFetchErrors<T>(retryResponse);
+      return readResponse(retryResponse);
     }
 
     // Token was valid — process the response normally
-    return handleFetchErrors<T>(response);
+    return readResponse(response);
   } catch (error: any) {
     // This catch block only handles network-level failures (no connection, DNS failure, abort)
     // HTTP errors (4xx, 5xx) are handled inside handleFetchErrors above

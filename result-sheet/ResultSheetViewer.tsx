@@ -8,12 +8,12 @@
 //   1. Print (browser dialog): window.print() honours the templates' inline
 //      @page { size: A4 portrait; margin: 0; } rule, so the browser's
 //      Save-as-PDF produces vector output.
-//   2. Download PDF (image): html2canvas-pro rasterises the same DOM node and
-//      jsPDF wraps it into an A4 file. Same visual, different representation.
+//   2. Download PDF: the sheet is sent to POST /api/pdf and printed by Chromium
+//      (see pdf/client/Usepdfdownload.ts). It is the same page the browser prints: the
+//      same CSS, the same A4 size, and real, selectable text.
 //
-// The sheet node sits behind `printRef`, so html2canvas has an exact handle on
-// the printable page and everything the template renders, including its inline
-// <style>, is inside the captured node.
+// The sheet node sits behind `printRef`, so the download has an exact handle on
+// the printable page and everything the template renders is inside it.
 //
 // The sheet is a fixed 210mm page (as print fidelity requires). On a phone it is
 // not reflowed: it sits in a horizontally scrolling container, and the Print and
@@ -25,11 +25,10 @@
 //   stickyTopClass  where the header strip sticks while scrolling (default
 //                   "top-16", which clears the public site's navbar).
 // ──────────────────────────────────────────
-import { useRef, useState, type ReactNode } from "react";
-import { toast } from "react-toastify";
+import { useRef, type ReactNode } from "react";
 
 import ResultSheet from "./ResultSheet";
-import { downloadResultPdf } from "./download/downloadResultPdf";
+import { usePdfDownload } from "@/pdf/client/Usepdfdownload";
 import type { StudentResultResponse } from "./types";
 
 // Print-orchestration CSS. Injected as an inline <style> block so it's only
@@ -98,50 +97,17 @@ export default function ResultSheetViewer({
   notice,
   stickyTopClass = "top-16",
 }: ResultSheetViewerProps) {
-  // The rendered A4 page's DOM node — captured for PDF rasterisation.
+  // The rendered A4 page's DOM node: what the PDF download is made from.
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  // Local pending state for the async PDF generation. Kept separate from
-  // any react-query state so it doesn't affect the check-result mutation.
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Sending the page, saving the file, the toast and the error text all live in
+  // the hook, so the other pages that offer a PDF behave the same way.
+  const { downloadPdf, isDownloading, error: downloadError } = usePdfDownload();
 
-  // Build a stable file name from the student and academic context so
-  // parents downloading multiple children's results don't stack up
-  // `student-result (1).pdf` files.
-  const fileName = buildFileName(result);
-
-  async function handleDownload() {
-    if (!printRef.current) {
-      // Should never happen in normal use — the button is only visible when a
-      // result has rendered, which sets the ref. Show a message rather than
-      // silently exiting so any future regression (e.g. a template missing
-      // its ref wiring) is visible to the user instead of just "nothing
-      // happens on click".
-      const msg =
-        "Couldn't read the result sheet. Please refresh and try again.";
-      setDownloadError(msg);
-      toast.error(msg);
-      return;
-    }
-    setIsDownloading(true);
-    setDownloadError(null);
-    try {
-      await downloadResultPdf(printRef.current, { fileName });
-    } catch (err) {
-      // Surface the error in the panel — html2canvas can fail on
-      // cross-origin images or very large captures. Keeping the caught
-      // error's message helps diagnose in the wild. Mirrored to a toast so
-      // the user sees the failure even if they've scrolled past the panel.
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Something went wrong while creating the PDF.";
-      setDownloadError(msg);
-      toast.error(msg);
-    } finally {
-      setIsDownloading(false);
-    }
+  function handleDownload() {
+    // A stable file name from the student and academic context, so parents
+    // downloading several children's results don't stack up `result (1).pdf`.
+    downloadPdf({ node: printRef.current, filename: buildFileName(result) });
   }
 
   function handlePrint() {
@@ -157,7 +123,12 @@ export default function ResultSheetViewer({
           Kept as an inline <style> tag rather than a global CSS file so the
           rules only exist while the preview is mounted, and cannot affect
           the print behaviour of any other route. */}
-      <style dangerouslySetInnerHTML={{ __html: PRINT_ORCHESTRATION_STYLES }} />
+      {/* data-pdf-exclude: the PDF is a page of its own, so it must not carry these
+          rules (see buildPrintHtml). */}
+      <style
+        data-pdf-exclude
+        dangerouslySetInnerHTML={{ __html: PRINT_ORCHESTRATION_STYLES }}
+      />
       {/* Header strip: title + controls. Sticky on scroll so the buttons
           remain reachable while the user browses a long report.
 
