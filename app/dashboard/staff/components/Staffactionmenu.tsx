@@ -8,8 +8,14 @@
 //   View Profile        (navigates to /dashboard/staff-profile?id=...)
 //   Roles & Permissions (opens the assignment panel for this staff member)
 //   Set Employment      (opens the employment panel for this staff member)
-//   These three are left out for a removed (soft-deleted) row: the API treats
+//   Assign Subjects     (opens the subjects panel to assign; disabled unless
+//                        the staff member is active, since only active staff
+//                        can be assigned)
+//   These four are left out for a removed (soft-deleted) row: the API treats
 //   a removed portfolio as not existing, so there is nothing to open.
+//   Unassign Subjects   (opens the subjects panel to unassign; offered for
+//                        every row, so a departed or removed staff member's
+//                        subjects can still be taken off them)
 //   Invitation actions  — only for staff whose invitation has not been
 //                         accepted (inviteState is not null):
 //                           Resend Invitation   always
@@ -18,10 +24,12 @@
 //   Delete Staff        (danger action)
 //
 // The dropdown is rendered via a React portal (into document.body) so it
-// escapes any overflow-hidden ancestor — including the table wrapper — and
-// never gets clipped. It is positioned with getBoundingClientRect() relative
-// to the viewport, and updates on scroll/resize so it stays anchored to the
-// trigger button at all times.
+// escapes any overflow-hidden ancestor, including the table wrapper. It is
+// positioned with getBoundingClientRect() relative to the viewport, opens
+// downward from the trigger, and updates on scroll/resize so it stays anchored
+// to the trigger button. Near the end of the page it can extend below the
+// screen, so the staff list keeps empty space below its last row for the
+// page to scroll into.
 //
 // Clicks anywhere outside this component automatically close the menu.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +45,8 @@ import {
   Trash2,
   ShieldCheck,
   Briefcase,
+  BookPlus,
+  BookMinus,
 } from "lucide-react";
 
 interface StaffActionMenuProps {
@@ -49,6 +59,10 @@ interface StaffActionMenuProps {
   onViewProfile: () => void;
   onAssignRoles: () => void;
   onSetEmployment: () => void;
+  // False for a staff member who cannot be assigned subjects (not active).
+  canAssignSubjects: boolean;
+  onAssignSubjects: () => void;
+  onUnassignSubjects: () => void;
   onResendInvite: () => void;
   onChangeInviteEmail: () => void;
   onRevokeInvite: () => void;
@@ -65,6 +79,9 @@ export default function StaffActionMenu({
   onViewProfile,
   onAssignRoles,
   onSetEmployment,
+  canAssignSubjects,
+  onAssignSubjects,
+  onUnassignSubjects,
   onResendInvite,
   onChangeInviteEmail,
   onRevokeInvite,
@@ -194,8 +211,26 @@ export default function StaffActionMenu({
                     setOpen(false);
                   }}
                 />
+                <MenuItem
+                  icon={<BookPlus size={13} />}
+                  label="Assign Subjects"
+                  disabled={!canAssignSubjects}
+                  disabledReason="Only active staff can be assigned subjects"
+                  onClick={() => {
+                    onAssignSubjects();
+                    setOpen(false);
+                  }}
+                />
               </>
             )}
+            <MenuItem
+              icon={<BookMinus size={13} />}
+              label="Unassign Subjects"
+              onClick={() => {
+                onUnassignSubjects();
+                setOpen(false);
+              }}
+            />
             {inviteState && (
               <>
                 <MenuItem
@@ -258,26 +293,39 @@ export default function StaffActionMenu({
 }
 
 // ── Reusable menu item ─────────────────────────────────────────────────────
+// A disabled item stays visible so the action can be found, and its
+// `disabledReason` shows as a tooltip and is read out by screen readers.
 function MenuItem({
   icon,
   label,
   danger = false,
+  disabled = false,
+  disabledReason,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   danger?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   onClick: () => void;
 }) {
   return (
     <button
       role="menuitem"
       onClick={onClick}
+      disabled={disabled}
+      title={disabled ? disabledReason : undefined}
+      aria-label={
+        disabled && disabledReason ? `${label}. ${disabledReason}` : undefined
+      }
       className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left
         ${
-          danger
-            ? "text-red-500 hover:bg-red-50"
-            : "text-slate-600 hover:bg-violet-50 hover:text-violet-700"
+          disabled
+            ? "text-slate-300 cursor-not-allowed"
+            : danger
+              ? "text-red-500 hover:bg-red-50"
+              : "text-slate-600 hover:bg-violet-50 hover:text-violet-700"
         }`}
     >
       {icon}

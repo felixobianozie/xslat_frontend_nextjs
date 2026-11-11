@@ -312,6 +312,12 @@ export default function SubjectsTab() {
             </div>
           </>
         )}
+
+        {/* Room for the last row's action menu, which opens downward. The
+            menu is four items tall. Collapses with this list. */}
+        {visibleSubjects.length > 0 && (
+          <div aria-hidden="true" className="h-40" />
+        )}
       </div>
 
       {/* ── Slide-in panels (only one open at a time) ──────────────────── */}

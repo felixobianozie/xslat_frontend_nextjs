@@ -12,7 +12,12 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import type { ApiEnvelope, TermSubjectRecord } from "@/types/configurations";
-import { QUERY_STALE_MS, SCHOOL_ID, TERM_SUBJECTS_KEY } from "../configutils";
+import {
+  LoadError,
+  QUERY_STALE_MS,
+  SCHOOL_ID,
+  TERM_SUBJECTS_KEY,
+} from "../configutils";
 
 export function useTermSubjects(termId: string | undefined) {
   const { clientAuthFetch } = useClientAuthFetch();
@@ -24,7 +29,7 @@ export function useTermSubjects(termId: string | undefined) {
       const { data, error } = await clientAuthFetch<
         ApiEnvelope<TermSubjectRecord[]>
       >(`subject/list/?school-id=${SCHOOL_ID}&term-id=${termId}`);
-      if (error) throw new Error(error.message);
+      if (error) throw new LoadError(error.message, error.status);
       return data!;
     },
     staleTime: QUERY_STALE_MS,

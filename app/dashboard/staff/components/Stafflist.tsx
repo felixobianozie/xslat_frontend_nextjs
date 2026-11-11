@@ -39,6 +39,14 @@
 //  - A row's menu offers the same panel for that one staff member, without
 //    touching the selection.
 //
+// Subjects:
+//  - A row's menu offers Assign Subjects and Unassign Subjects, which open
+//    StaffSubjectsPanel for that one staff member in the current term.
+//
+// Action menus:
+//  - A row's menu opens downward and can reach below the last row, so empty
+//    space under the list lets the page scroll far enough to show all of it.
+//
 // Data layer:
 //  - initialData is the full server-fetched paginated envelope for page 1.
 //    total_pages, count, and data all come directly from the server — no
@@ -91,6 +99,8 @@ import FilterPanel, {
 } from "../../components/Filterpanel";
 import ResultCount from "../../components/Resultcount";
 import StaffEmploymentPanel from "./Staffemploymentpanel";
+import StaffSubjectsPanel from "./Staffsubjectspanel";
+import type { SubjectsMode } from "../staffsubjects";
 import StaffStatusBadge from "./Staffstatusbadge";
 import {
   EMPLOYMENT_CHOICES,
@@ -330,6 +340,14 @@ export default function StaffList({ initialData }: StaffListProps) {
     targets: StaffPortfolio[];
     fromSelection: boolean;
   }>({ show: false, session: 0, targets: [], fromSelection: false });
+  // The subjects panel, for one staff member at a time. `session` changes on
+  // every opening so the panel starts fresh.
+  const [subjectsPanel, setSubjectsPanel] = useState<{
+    show: boolean;
+    session: number;
+    mode: SubjectsMode;
+    target: StaffPortfolio | null;
+  }>({ show: false, session: 0, mode: "assign", target: null });
   // The invitation dialog being shown (change email / revoke), if any
   const [inviteDialog, setInviteDialog] = useState<{
     kind: "email" | "revoke";
@@ -524,6 +542,19 @@ export default function StaffList({ initialData }: StaffListProps) {
     setEmploymentPanel((previous) => ({ ...previous, show: false }));
   }
 
+  function openSubjectsPanel(target: StaffPortfolio, mode: SubjectsMode) {
+    setSubjectsPanel((previous) => ({
+      show: true,
+      session: previous.session + 1,
+      mode,
+      target,
+    }));
+  }
+
+  function closeSubjectsPanel() {
+    setSubjectsPanel((previous) => ({ ...previous, show: false }));
+  }
+
   // ── Resend invitation ──────────────────────────────────────────────────────
   // Gives the invitation a new code and a fresh 24-hour expiry, reactivates the
   // portfolio if it was revoked, and emails the invitation again.
@@ -569,6 +600,9 @@ export default function StaffList({ initialData }: StaffListProps) {
         }
         onAssignRoles={() => openRolesPanel([portfolio], false)}
         onSetEmployment={() => openEmploymentPanel([portfolio], false)}
+        canAssignSubjects={portfolio.status === "active"}
+        onAssignSubjects={() => openSubjectsPanel(portfolio, "assign")}
+        onUnassignSubjects={() => openSubjectsPanel(portfolio, "unassign")}
         onResendInvite={() => resendInvite(portfolio.id)}
         onChangeInviteEmail={() =>
           setInviteDialog({ kind: "email", portfolio })
@@ -605,7 +639,10 @@ export default function StaffList({ initialData }: StaffListProps) {
         {/* ── Main list panel ─────────────────────────────────────────────── */}
         <div
           className={`transition-all duration-500 ease-in-out overflow-hidden ${
-            showCreatePanel || rolesPanel.show || employmentPanel.show
+            showCreatePanel ||
+            rolesPanel.show ||
+            employmentPanel.show ||
+            subjectsPanel.show
               ? "w-0 opacity-0 h-0"
               : "w-full opacity-100"
           }`}
@@ -1086,6 +1123,10 @@ export default function StaffList({ initialData }: StaffListProps) {
               )}
             </>
           )}
+
+          {/* Room for the last row's action menu, which opens downward and is
+              up to nine items tall. Collapses with this panel. */}
+          {portfolios.length > 0 && <div aria-hidden="true" className="h-80" />}
         </div>
 
         {/* ── Create staff slide-in panel ───────────────────────────────── */}
@@ -1105,6 +1146,16 @@ export default function StaffList({ initialData }: StaffListProps) {
             // Staff that were ticked for this change are done with.
             if (rolesPanel.fromSelection) setSelected({});
           }}
+        />
+
+        {/* ── Subjects slide-in panel ───────────────────────────────────── */}
+        <StaffSubjectsPanel
+          show={subjectsPanel.show}
+          session={subjectsPanel.session}
+          mode={subjectsPanel.mode}
+          target={subjectsPanel.target}
+          onClose={closeSubjectsPanel}
+          onApplied={closeSubjectsPanel}
         />
 
         {/* ── Employment slide-in panel ─────────────────────────────────── */}

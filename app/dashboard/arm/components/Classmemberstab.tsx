@@ -852,6 +852,10 @@ export default function ClassMembersTab() {
               </div>
             </>
           )}
+
+          {/* Room for the last row's action menu, which opens downward. The
+              menu is three items tall. Collapses with this list. */}
+          {students.length > 0 && <div aria-hidden="true" className="h-32" />}
         </div>
 
         {/* ── Slide-in panels ──────────────────────────────────────────── */}

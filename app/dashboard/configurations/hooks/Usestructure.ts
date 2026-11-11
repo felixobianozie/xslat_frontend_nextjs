@@ -24,6 +24,7 @@ import type {
 import {
   ARMS_KEY,
   LEVELS_KEY,
+  LoadError,
   QUERY_STALE_MS,
   SCHOOL_ID,
   SECTIONS_KEY,
@@ -98,7 +99,7 @@ export function useStructureArms(termId: string | undefined) {
       const { data, error } = await clientAuthFetch<ApiEnvelope<ClassArm[]>>(
         `arm/list/?school-id=${SCHOOL_ID}&term-id=${termId}`,
       );
-      if (error) throw new Error(error.message);
+      if (error) throw new LoadError(error.message, error.status);
       return data!;
     },
     staleTime: QUERY_STALE_MS,

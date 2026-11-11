@@ -167,6 +167,18 @@ export function splitItemErrors(
   return { general: fieldMessage(fieldErrors, listKey), rows };
 }
 
+// Thrown by a query when the backend refuses a read. Carries the HTTP status so
+// a screen can tell a missing permission (403) from other failures.
+export class LoadError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "LoadError";
+    this.status = status;
+  }
+}
+
 // Thrown by an editor's mutation when the backend rejects a save. Carries the
 // per-field messages so the form can show them next to the right input.
 export class SaveError extends Error {

@@ -1,5 +1,6 @@
 zip -r xslat_frontend.zip . \
   -x "node_modules/*" \
+  -x "public/*" \
   -x ".next/*" \
   -x "out/*" \
   -x "dist/*" \

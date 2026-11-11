@@ -136,6 +136,8 @@ export interface TermSubjectRecord {
   subject_arms: {
     id: string;
     arm: { id: string; name: string; abbr: string };
+    // The staff portfolios teaching the subject in this arm.
+    teachers?: { id: string }[];
   }[];
 }
 
