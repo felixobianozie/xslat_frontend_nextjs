@@ -4,8 +4,8 @@
 // Staffprofile.tsx
 //
 // A staff member's profile at this school, read-only: a header card (photo,
-// name, public ID, status, roles) and cards for their contact details, their
-// place at the school and their addresses.
+// name, public ID, status, roles and individual permissions) and cards for
+// their contact details, their place at the school and their addresses.
 //
 // Data layer:
 //  - GET staff/portfolios/profile/?portfolio-id=<id>&school-id=<school> — the
@@ -17,6 +17,11 @@
 //    employment or roles refreshes an open profile.
 //  - A profile that does not exist or was removed (404) or that the viewer may
 //    not read (403) shows its own message. Those are not retried.
+//  - Individual permissions (given directly, on top of roles) are not part of
+//    the profile. They come from GET staff/portfolios/access/, which the same
+//    people may read, fetched in the browser once the page opens. Its key sits
+//    under the same prefix, so it refreshes with the profile. If it fails the
+//    profile still shows, with a note in place of the permissions.
 //
 // The camera button is a placeholder until photos are built.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +40,7 @@ import {
   joinAddress,
 } from "../../components/Profilecard";
 import ProfilePhoto from "../../components/Profilephoto";
+import AccessChips from "../../components/Accesschips";
 import StaffStatusBadge from "../../staff/components/Staffstatusbadge";
 import { EMPLOYMENT_CHOICES } from "../../staff/staffstatus";
 import { personName } from "@/lib/Personname";
@@ -44,6 +50,12 @@ const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 interface ProfileResponse {
   message: string;
   data: StaffProfileDetails;
+}
+
+// GET staff/portfolios/access/, narrowed to what this page reads.
+interface AccessResponse {
+  message: string;
+  data: { permissions: { codename: string; app_label: string }[] };
 }
 
 // A failed load, carrying the HTTP status so the page can word it properly.
@@ -107,6 +119,24 @@ export default function StaffProfile({
     initialDataUpdatedAt: initialData ? mountedAt : undefined,
 
     // A missing or forbidden profile will not appear by asking again.
+    retry: (failureCount, err) =>
+      !(err.status && err.status < 500) && failureCount < 2,
+  });
+
+  // The staff member's individual permissions, as codenames.
+  const accessQuery = useQuery<string[], ProfileLoadError>({
+    queryKey: ["staff", SCHOOL_ID, "access", portfolioId],
+
+    queryFn: async () => {
+      const { data, error } = await clientAuthFetch<AccessResponse>(
+        `staff/portfolios/access/?portfolio-id=${encodeURIComponent(
+          portfolioId,
+        )}&school-id=${SCHOOL_ID}`,
+      );
+      if (error) throw new ProfileLoadError(error.message, error.status);
+      return data!.data.permissions.map((permission) => permission.codename);
+    },
+
     retry: (failureCount, err) =>
       !(err.status && err.status < 500) && failureCount < 2,
   });
@@ -198,18 +228,12 @@ export default function StaffProfile({
             {[user.public_id, profile.school.name].filter(Boolean).join(" · ")}
           </p>
 
-          {profile.roles.length > 0 && (
-            <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Roles">
-              {profile.roles.map((role) => (
-                <li
-                  key={role.id}
-                  className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700"
-                >
-                  {role.name}
-                </li>
-              ))}
-            </ul>
-          )}
+          <AccessChips
+            className="mt-3"
+            roles={profile.roles}
+            permissions={accessQuery.data}
+            permissionsFailed={accessQuery.isError}
+          />
         </div>
       </section>
 

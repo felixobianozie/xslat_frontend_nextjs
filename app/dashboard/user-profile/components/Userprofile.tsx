@@ -15,7 +15,9 @@
 //   Account            Public ID, how they joined, default user type, sign-up
 //                      type, member since, last sign-in. Read-only.
 //   My schools         Every school they hold a staff portfolio in, with
-//                      status and roles. Only this school's card links to its
+//                      status, roles and individual permissions (given
+//                      directly, on top of roles), all from GET users/me/.
+//                      Only this school's card links to its
 //                      staff profile: the app serves one school, so the other
 //                      schools are shown for information.
 //
@@ -57,6 +59,7 @@ import {
   TextField,
 } from "../../components/Profilefields";
 import ProfilePhoto from "../../components/Profilephoto";
+import AccessChips from "../../components/Accesschips";
 import VerifyEmailPanel from "../../components/Verifyemailpanel";
 import VerifyPhonePanel from "../../components/Verifyphonepanel";
 import StaffStatusBadge from "../../staff/components/Staffstatusbadge";
@@ -588,18 +591,13 @@ function SchoolCard({ portfolio }: { portfolio: UserPortfolioSummary }) {
           )}
         </div>
         <p className="mt-1 text-xs text-slate-400">{facts}</p>
-        {portfolio.roles.length > 0 && (
-          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Roles">
-            {portfolio.roles.map((role) => (
-              <li
-                key={role.id}
-                className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700"
-              >
-                {role.name}
-              </li>
-            ))}
-          </ul>
-        )}
+        <AccessChips
+          className="mt-2"
+          roles={portfolio.roles}
+          permissions={portfolio.permissions.map(
+            (permission) => permission.codename,
+          )}
+        />
       </div>
 
       <div className="shrink-0">

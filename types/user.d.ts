@@ -37,6 +37,9 @@ interface UserPortfolioSummary {
   // True for the school the person lands in when they sign in.
   active_login: boolean;
   roles: ProfileRole[];
+  // Permissions given directly, on top of the roles. Permissions that come
+  // through roles are not listed.
+  permissions: { codename: string; app_label: string }[];
   created_on: string;
   school: ProfileSchool;
 }
