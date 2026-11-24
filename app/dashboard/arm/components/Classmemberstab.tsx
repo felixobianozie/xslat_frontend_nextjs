@@ -29,18 +29,28 @@
 //    backend returns with no client-side filtering or reordering.
 //  - PUT arm/detail/roster/ with remove_student to remove a member. Fires
 //    from the row action menu via ClassMemberRemoveFromArmDialog.
+//  - The arm's subjects (useArmSubjects, shared with the Subjects tab) supply
+//    each student's subject exclusions.
+//
+// Subject exclusions:
+//  - Desktop has an Exclusions column after Gender, and mobile cards add it
+//    to the line after gender: a book-minus icon and the number of subjects
+//    the student is excluded from, or nothing when there are none. Hovering
+//    on desktop lists the subjects; the Edit Subjects panel changes them.
+//  - The printed roster has an "Excl." column listing subject abbreviations.
 //
 // Change Class remains on the /students module — that flow owns transfers
 // between arms and is not duplicated here. The remove dialog surfaces a
 // link to the Students page for users who want the transfer path instead.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useReactToPrint } from "react-to-print";
 import {
   ArrowUpDown,
+  BookMinus,
   Check,
   Plus,
   Printer,
@@ -55,6 +65,7 @@ import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
 import { useArmDetails } from "../context/Armdetailsprovider";
+import { useArmSubjects } from "../hooks/Usearmsubjects";
 import ClassMemberActionMenu from "./Classmemberactionmenu";
 import ClassMemberRemoveFromArmDialog from "./Classmemberremovefromarmdialog";
 import AddClassMemberPanel from "./Addclassmemberpanel";
@@ -134,7 +145,8 @@ const CLASS_ROSTER_PRINT_STYLE = `
     /* display: table-header-group makes the browser repeat the ENTIRE
        <thead> on every printed page automatically. Both rows inside it
        — the banner (arm label + school name) and the column-header row
-       (S/N, Name, Student ID, Gender) — appear at the top of every page. */
+       (S/N, Name, Student ID, Gender, Excl.) — appear at the top of every
+       page. */
     .class-roster-print thead {
       display: table-header-group;
     }
@@ -193,6 +205,19 @@ const CLASS_ROSTER_PRINT_STYLE = `
        page ends with a visible base line rather than a hairline. */
     .class-roster-print tbody tr:last-child {
       border-bottom: 1.5pt solid #000;
+    }
+
+    /* Exclusions column: a narrow column whose heading matches the other
+       headings. Its cells are a size smaller than the rest of the row, and
+       long abbreviation lists wrap inside the cell so the table never
+       widens. */
+    .class-roster-print .excl {
+      width: 22%;
+    }
+    .class-roster-print tbody td.excl {
+      font-size: 7.5pt;
+      line-height: 1.2;
+      word-break: break-word;
     }
   }
 `;
@@ -428,6 +453,20 @@ export default function ClassMembersTab() {
   }, [isError, error]);
 
   const students = data?.data ?? [];
+
+  // ── Subject exclusions per student ─────────────────────────────────────────
+  const { data: armSubjectsData } = useArmSubjects();
+  const exclusionsByStudent = useMemo(() => {
+    const byStudent = new Map<string, ArmSubject["definition"][]>();
+    for (const subject of armSubjectsData?.data ?? []) {
+      for (const excluded of subject.excluded_students) {
+        const subjects = byStudent.get(excluded.id) ?? [];
+        subjects.push(subject.definition);
+        byStudent.set(excluded.id, subjects);
+      }
+    }
+    return byStudent;
+  }, [armSubjectsData]);
   // Total from the backend when available (paginated envelope); falls back to
   // the returned array length when the "no current term" branch trims off
   // the pagination metadata.
@@ -729,13 +768,14 @@ export default function ClassMembersTab() {
                       <th className="px-5 py-3 font-semibold">Student</th>
                       <th className="px-5 py-3 font-semibold">Student ID</th>
                       <th className="px-5 py-3 font-semibold">Gender</th>
+                      <th className="px-5 py-3 font-semibold">Exclusions</th>
                       <th className="px-5 py-3 font-semibold w-24">Action</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-50">
                     {students.length === 0 ? (
                       <tr>
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <EmptyState
                             variant={appliedSearch ? "search" : "generic"}
                             title={
@@ -777,6 +817,12 @@ export default function ClassMembersTab() {
                             {student.gender
                               ? (GENDER_LABELS[student.gender] ?? "—")
                               : "—"}
+                          </td>
+                          <td className="px-5">
+                            <ExclusionCount
+                              subjects={exclusionsByStudent.get(student.id)}
+                              size={14}
+                            />
                           </td>
                           <td className="px-5">
                             <ClassMemberActionMenu
@@ -836,6 +882,15 @@ export default function ClassMembersTab() {
                             )}
                             {student.gender && (
                               <span>{GENDER_LABELS[student.gender]}</span>
+                            )}
+                            {exclusionsByStudent.has(student.id) && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <ExclusionCount
+                                  subjects={exclusionsByStudent.get(student.id)}
+                                  size={11}
+                                />
+                              </>
                             )}
                           </div>
                         </div>
@@ -898,14 +953,14 @@ export default function ClassMembersTab() {
         <div ref={printRef} className="class-roster-print">
           <table>
             <thead>
-              {/* Banner row — spans all four columns, sits inside <thead> so
+              {/* Banner row — spans all five columns, sits inside <thead> so
                   the browser repeats it on every printed page alongside the
                   column-header row below. */}
               {(() => {
                 const { armLabel, rest } = buildPrintHeader(arm);
                 return (
                   <tr className="print-banner-row">
-                    <th colSpan={4}>
+                    <th colSpan={5}>
                       {armLabel && (
                         <span className="arm-label">{armLabel}</span>
                       )}
@@ -919,6 +974,7 @@ export default function ClassMembersTab() {
                 <th>Name</th>
                 <th>Student ID</th>
                 <th>Gender</th>
+                <th className="excl">Excl.</th>
               </tr>
             </thead>
             <tbody>
@@ -928,6 +984,11 @@ export default function ClassMembersTab() {
                   <td>{fullName(s)}</td>
                   <td>{s.public_id ?? "—"}</td>
                   <td>{s.gender ? (GENDER_LABELS[s.gender] ?? "—") : "—"}</td>
+                  <td className="excl">
+                    {(exclusionsByStudent.get(s.id) ?? [])
+                      .map((subject) => subject.abbr)
+                      .join(", ")}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -935,5 +996,35 @@ export default function ClassMembersTab() {
         </div>
       </div>
     </>
+  );
+}
+
+// ── Exclusion count ──────────────────────────────────────────────────────────
+// A book-minus icon and the number of subjects a student is excluded from,
+// or nothing when there are none. The subject names are in the hover tooltip
+// and the screen-reader label rather than on screen.
+function ExclusionCount({
+  subjects,
+  size,
+}: {
+  subjects?: ArmSubject["definition"][];
+  size: number;
+}) {
+  if (!subjects || subjects.length === 0) return null;
+
+  const names = subjects.map((subject) => subject.name).join(", ");
+  const label = `Excluded from ${subjects.length} ${
+    subjects.length === 1 ? "subject" : "subjects"
+  }: ${names}`;
+
+  return (
+    <span
+      title={`Excluded from: ${names}`}
+      className="inline-flex items-center gap-1 font-medium text-amber-600"
+    >
+      <BookMinus size={size} aria-hidden="true" />
+      <span aria-hidden="true">{subjects.length}</span>
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }

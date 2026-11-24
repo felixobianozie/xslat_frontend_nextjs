@@ -21,24 +21,20 @@
 
 import Image from "next/image";
 import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Mail, Phone, UserCog } from "lucide-react";
 import { toast } from "react-toastify";
 
-import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import { useArmDetails } from "../context/Armdetailsprovider";
-import type { ApiEnvelope } from "../page";
+import { useArmSubjects } from "../hooks/Usearmsubjects";
 import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
-
 // Avatar selection — fall back to a gender-neutral default if gender is unknown.
 // Note: the current backend response for arm.class_teacher doesn't include a
 // gender field on staff_profile (or its nested user), so the lookup below
-// always resolves to FEMALE_AVATAR. Preserved as-is for visual parity with
-// the previous mock-using version.
+// always resolves to FEMALE_AVATAR. The gender lookup stays so the avatar
+// follows the teacher's gender once the response includes it.
 const FEMALE_AVATAR = "/images/female_avatar.png";
 const MALE_AVATAR = "/images/male_avatar.webp";
 
@@ -64,32 +60,13 @@ function subjectsTaughtBy(
 
 export default function ClassTeacherTab() {
   const { armId, arm } = useArmDetails();
-  const { clientAuthFetch } = useClientAuthFetch();
-
-  // Term id comes from the arm chain — required by subject/list/.
-  const termId = arm?.level.section.term?.id ?? "";
 
   // ── Data: arm subjects for the "Subjects taught" badges ───────────────────
-  // Shared cache key with SubjectsTab + ResultsTab so cross-tab navigation
-  // doesn't trigger duplicate fetches.
   const {
     data: subjectsData,
     isLoading: subjectsLoading,
     isError: subjectsError,
-  } = useQuery<ApiEnvelope<ArmSubject[]>>({
-    queryKey: ["arm-subjects", armId],
-    queryFn: async () => {
-      const url =
-        `subject/list/?school-id=${SCHOOL_ID}` +
-        `&term-id=${termId}` +
-        `&arm=${armId}`;
-      const { data, error } =
-        await clientAuthFetch<ApiEnvelope<ArmSubject[]>>(url);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    enabled: !!armId && !!termId,
-  });
+  } = useArmSubjects();
 
   useEffect(() => {
     if (subjectsError) toast.error("Could not load subjects for this arm.");

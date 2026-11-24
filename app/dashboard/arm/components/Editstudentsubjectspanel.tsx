@@ -12,10 +12,12 @@
 //      Backend: PUT subject/detail/ with { id: subject_id, include_students: [student_id] }
 //
 // Backend wiring notes:
-//   - The subject/list/ endpoint does NOT return `excluded_students` in its
-//     payload, so we cannot derive offered vs not-offered client-side. We use
-//     the dedicated `?offered-by-student=…` and `?not-offered-by-student=…`
-//     query params to fetch each list separately.
+//   - The two lists come from subject/list/ filtered server-side with
+//     `?offered-by-student=…` and `?not-offered-by-student=…`, so each is
+//     exactly the subjects the student takes or is excluded from.
+//   - A save changes the arm's subject exclusions, so it also refreshes
+//     ["arm-subjects", armId], which the Class Members tab's exclusion counts
+//     are built from.
 //   - subject/detail/ updates ONE subject per request. To exclude/include a
 //     student across N subjects, we fire N parallel PUTs (Promise.allSettled)
 //     and report partial-failure counts to the user. Successful PUTs persist
@@ -215,6 +217,7 @@ export default function EditStudentSubjectsPanel({
         queryKey: ["student-not-offered-subjects", armId, student?.id],
       });
       queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      queryClient.invalidateQueries({ queryKey: ["arm-subjects", armId] });
       setSelectedSubjectIds([]);
     },
 
@@ -228,6 +231,7 @@ export default function EditStudentSubjectsPanel({
         queryKey: ["student-not-offered-subjects", armId, student?.id],
       });
       queryClient.invalidateQueries({ queryKey: ["arm-detail", armId] });
+      queryClient.invalidateQueries({ queryKey: ["arm-subjects", armId] });
       setSelectedSubjectIds([]);
       toast.error(
         err instanceof Error ? err.message : "Could not update subjects.",

@@ -21,25 +21,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Search } from "lucide-react";
 import { toast } from "react-toastify";
 
-import { useClientAuthFetch } from "@/lib/Useclientauthfetch";
 import EmptyState from "../../components/Emptystate";
 import TableLoader from "../../components/Tableloader";
 import { useArmDetails } from "../context/Armdetailsprovider";
+import { useArmSubjects } from "../hooks/Usearmsubjects";
 import SubjectActionMenu from "./Subjectactionmenu";
 import AssignSubjectTeachersPanel from "./Assignsubjectteacherspanel";
 import RemoveSubjectTeachersPanel from "./Removesubjectteacherspanel";
 import ViewAssessmentPanel from "./Viewassessmentpanel";
 import RecordAssessmentPanel from "./Recordassessmentpanel";
-import type { ApiEnvelope } from "../page";
 import { personName } from "@/lib/Personname";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? "";
 
 // Pull a teacher's display name from a nested StaffPortfolio.
 function teacherDisplayName(t: ArmTeacher): string {
@@ -48,8 +44,7 @@ function teacherDisplayName(t: ArmTeacher): string {
 }
 
 export default function SubjectsTab() {
-  const { armId, arm } = useArmDetails();
-  const { clientAuthFetch } = useClientAuthFetch();
+  const { armId } = useArmDetails();
 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -62,31 +57,13 @@ export default function SubjectsTab() {
     null,
   );
 
-  // The subject endpoint requires the term-id from the arm chain.
-  const termId = arm?.level.section.term?.id ?? "";
-
   // ── Data: subjects offered in this arm ─────────────────────────────────────
   const {
     data: subjectsData,
     isPending: subjectsPending,
     isError: subjectsError,
     error: subjectsErr,
-  } = useQuery<ApiEnvelope<ArmSubject[]>>({
-    queryKey: ["arm-subjects", armId],
-    queryFn: async () => {
-      const url =
-        `subject/list/?school-id=${SCHOOL_ID}` +
-        `&term-id=${termId}` +
-        `&arm=${armId}`;
-      const { data, error } =
-        await clientAuthFetch<ApiEnvelope<ArmSubject[]>>(url);
-      if (error) throw new Error(error.message);
-      return data!;
-    },
-    // Wait for both armId and termId — armId comes from the URL, termId comes
-    // from the arm-detail fetch upstream. Without termId the endpoint 400s.
-    enabled: !!armId && !!termId,
-  });
+  } = useArmSubjects();
 
   useEffect(() => {
     if (subjectsError && subjectsErr) {
