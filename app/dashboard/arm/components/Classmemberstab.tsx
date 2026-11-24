@@ -35,9 +35,12 @@
 // Subject exclusions:
 //  - Desktop has an Exclusions column after Gender, and mobile cards add it
 //    to the line after gender: a book-minus icon and the number of subjects
-//    the student is excluded from, or nothing when there are none. Hovering
-//    on desktop lists the subjects; the Edit Subjects panel changes them.
+//    the student is excluded from. Hovering on desktop lists the subjects;
+//    the Edit Subjects panel changes them.
 //  - The printed roster has an "Excl." column listing subject abbreviations.
+//  - In both tables a student with no exclusions shows "None", and "—" shows
+//    while the subjects are loading or could not be loaded, so neither is
+//    mistaken for "None". Mobile cards show nothing when there are none.
 //
 // Change Class remains on the /students module — that flow owns transfers
 // between arms and is not duplicated here. The remove dialog surfaces a
@@ -455,7 +458,8 @@ export default function ClassMembersTab() {
   const students = data?.data ?? [];
 
   // ── Subject exclusions per student ─────────────────────────────────────────
-  const { data: armSubjectsData } = useArmSubjects();
+  const { data: armSubjectsData, isSuccess: exclusionsLoaded } =
+    useArmSubjects();
   const exclusionsByStudent = useMemo(() => {
     const byStudent = new Map<string, ArmSubject["definition"][]>();
     for (const subject of armSubjectsData?.data ?? []) {
@@ -819,10 +823,16 @@ export default function ClassMembersTab() {
                               : "—"}
                           </td>
                           <td className="px-5">
-                            <ExclusionCount
-                              subjects={exclusionsByStudent.get(student.id)}
-                              size={14}
-                            />
+                            {!exclusionsLoaded ? (
+                              <span className="text-slate-500">—</span>
+                            ) : exclusionsByStudent.has(student.id) ? (
+                              <ExclusionCount
+                                subjects={exclusionsByStudent.get(student.id)}
+                                size={14}
+                              />
+                            ) : (
+                              <span className="text-slate-500">None</span>
+                            )}
                           </td>
                           <td className="px-5">
                             <ClassMemberActionMenu
@@ -985,9 +995,12 @@ export default function ClassMembersTab() {
                   <td>{s.public_id ?? "—"}</td>
                   <td>{s.gender ? (GENDER_LABELS[s.gender] ?? "—") : "—"}</td>
                   <td className="excl">
-                    {(exclusionsByStudent.get(s.id) ?? [])
-                      .map((subject) => subject.abbr)
-                      .join(", ")}
+                    {!exclusionsLoaded
+                      ? "—"
+                      : (exclusionsByStudent
+                          .get(s.id)
+                          ?.map((subject) => subject.abbr)
+                          .join(", ") ?? "None")}
                   </td>
                 </tr>
               ))}
